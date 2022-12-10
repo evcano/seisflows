@@ -197,7 +197,7 @@ class Inversion(Migration):
         Add an additional line in the state file to keep track of iteration,
         """
         super().checkpoint()
-        
+
         with open(self.path.state_file, "r") as f:
             lines = f.readlines()
         # Clear out the previous 'iteration' line and add in new

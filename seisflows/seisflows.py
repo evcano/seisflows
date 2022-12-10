@@ -729,7 +729,7 @@ class SeisFlows:
         except AssertionError as e:
             print(msg.cli(str(e), border="=", header="parameter errror"))
 
-    def state(self, choice="print", fid="sfstate.txt", **kwargs):
+    def state(self, choice=None, fid="sfstate.txt", **kwargs):
         """
         Manipulate the state file. State filename is set to the default value
         defined by seisflows.workflow.forward.Forward.__init__()
@@ -740,36 +740,19 @@ class SeisFlows:
                           border="=", header="state file not found"))
             sys.exit(-1)
 
-        acceptable_args = {"print": self._print_states,
-                           "tasks": self._print_tasks,
-                           "inherit": self._print_inheritance}
-
-        # Ensure that help message is thrown for empty commands
-        if choice not in acceptable_args.keys():
-            self._subparser.print_help()
+        if not choice:
+            lines = open(fid, "r").read()
+            print(f"\n{lines}")
             sys.exit(0)
+        else:
+            acceptable_args = {}
 
-        acceptable_args[choice](*self._args.args, **kwargs)
+            # Ensure that help message is thrown for empty commands
+            if choice not in acceptable_args.keys():
+                self._subparser.print_help()
+                sys.exit(0)
 
-    def _print_states(self, fid):
-        """Pretty print the States file"""
-        lines = open(fid, "r").readlines()
-        for line in lines:
-            if line.startswith("#"):
-                continue
-            else:
-                function, state = line.split(":")
-
-
-            for module_, module_list in module_dict.items():
-                if package is not None and module_ != package:
-                    continue
-                items.append(f"- {module_}".expandtabs(tabsize=4))
-                for module_ in module_list:
-                    items.append(f"\t* {module_}".expandtabs(tabsize=4))
-            print(msg.cli("'-': module, '*': class", items=items,
-                          header="seisflows modules"))
-
+            acceptable_args[choice](*self._args.args, **kwargs)
 
     def init(self, **kwargs):
         """
