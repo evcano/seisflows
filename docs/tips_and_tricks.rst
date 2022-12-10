@@ -60,6 +60,27 @@ the task file with a text editor and change states.
    line option to edit the file `seisflows state`, and with a more sophisticated
    system that can single out particular job failures to re-run.
 
+Setting Paths in Parameter File
+-------------------------------
+
+By default, SeisFlows sets paths relative to the current working directory in
+the parameter file. Users can overwrite this feature during the `configure`
+step by running:
+
+.. code:: bash
+
+   seisflows configure --absolute_paths 
+
+If you already have a created parameter file and want to set paths as relative
+or absolute from the command line, you can run:
+
+.. code:: bash
+
+   seisflows configure --set_paths <choice>  
+
+Where choice is either 'relative' or 'absolute'
+
+
 Tasktime vs. Walltime
 ---------------------
 

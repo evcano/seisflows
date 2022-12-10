@@ -613,10 +613,11 @@ class SeisFlows:
                         continue
                     if val is None:
                         val = "null"
-                    if absolute_paths:
-                        val = os.path.abspath(val)
                     else:
-                        val = os.path.relpath(val)
+                        if absolute_paths:
+                            val = os.path.abspath(val)
+                        else:
+                            val = os.path.relpath(val)
                     f.write(f"path_{key}: {val}\n")
                     written.append(key)
         except Exception:

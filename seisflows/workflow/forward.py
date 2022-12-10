@@ -237,9 +237,9 @@ class Forward:
             with open(self.path.state_file, "w") as f:
                 f.write(f"# SeisFlows State File\n")
                 f.write(f"# {asctime()}\n")
-                f.write(f"# Acceptable states: 'completed', 'failed', "
-                        f"'pending'\n")
-                f.write(f"# =======================================\n")
+                f.write(f"# ====================\n")
+                for task in self.task_list:
+                    f.write(f"{task.__name__}: pending")
 
         # Distribute modules to the class namespace. We don't do this at init
         # incase _modules was set as NoneType
