@@ -95,17 +95,18 @@ def sfparser():
     # =========================================================================
     configure = subparser.add_parser(
         "configure", help="Fill parameter file with defaults",
-        description="""SeisFlows parameter files will vary depending on 
-        chosen modules and their respective required parameters. This function 
-        will dynamically traverse the source code and generate a template 
-        parameter file based on module choices. The resulting file incldues 
-        docstrings and type hints for each parameter. Optional parameters will 
-        be set with default values and required parameters and paths will be 
-        marked appropriately. Required parameters must be set before a workflow
-        can be submitted."""
+        description="""SeisFlows parameter files vary depending on chosen 
+        modules. `Configure` dynamically traverses source code to generate a 
+        parameter file with appropriate docstrings and defaults based on module 
+        choices. It also has a flag to change paths between relative and 
+        absolute"""
     )
     configure.add_argument("-a", "--absolute_paths", action="store_true",
-                           help="Set default paths relative to cwd")
+                           help="Set default paths relative to `cwd`")
+    configure.add_argument("-S", "--set_paths", type=str, default=None,
+                           help="Flag to ignore the `configure` step and "
+                                "just re-write paths in an existing parameter "
+                                "file as either 'relative' or 'absolute'")
     # =========================================================================
     swap = subparser.add_parser(
         "swap", help="Swap module parameters in an existing parameter file",
@@ -118,6 +119,20 @@ def sfparser():
     )
     swap.add_argument("module", nargs="?", help="Module name to swap")
     swap.add_argument("classname", nargs="?", help="Classname to swap to")
+    # =========================================================================
+    state = subparser.add_parser(
+        "state", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""
+The state file is responsible for the SeisFlows checkpointing system. The 
+`state` command lets you manipulate the state file from the command line
+                    """,
+        help="Manipulate the state file responsible for checkpointing"
+    )
+
+    state.add_argument("--fid", type=str, nargs="?", default="sfstate.txt",
+                       help="Name of state file")
+    state.add_argument("-c", "--check", type=str, nargs="*",
+                       help="Generic arguments passed to state function")
     # =========================================================================
     submit = subparser.add_parser(
         "submit", help="Submit initial workflow to system",
@@ -352,7 +367,7 @@ working state before the workflow can be resumed
     subparser_dict = {"check": check, "par": par,
                       "sempar": sempar, "clean": clean, "plot2d": plot2d,
                       "restart": restart, "print": print_, "reset": reset,
-                      "examples": examples, "swap": swap}
+                      "examples": examples, "swap": swap, "state": state}
     if parser.parse_args().command in subparser_dict:
         return parser, subparser_dict[parser.parse_args().command]
     else:
@@ -485,7 +500,18 @@ class SeisFlows:
             f.write(msg.base_parameter_file)
         print(msg.cli(f"created parameter file: {self._args.parameter_file}"))
 
-    def configure(self, absolute_paths=False, **kwargs):
+    def configure(self, absolute_paths=False, set_paths=None, **kwargs):
+        """
+        Logic-level convenience function that either runs the configure command
+        to configure the parameter file, or a sub command which makes edits in
+        place on a given parameter file
+        """
+        if set_paths is not None:
+            self._configure_set_paths(set_paths)
+        else:
+            self._configure_par_file(absolute_paths, **kwargs)
+
+    def _configure_par_file(self, absolute_paths=False, **kwargs):
         """
         Dynamically generate the parameter file by writing out docstrings and
         default values for each of the SeisFlows module parameters.
@@ -518,7 +544,6 @@ class SeisFlows:
             Defaults to False, uses relative paths.
         """
         from traceback import format_exc
-
         print("configuring SeisFlows parameter file")
 
         def split_module_docstring(mod, idx):
@@ -607,6 +632,38 @@ class SeisFlows:
 
         f.close()
 
+    def _configure_set_paths(self, choice):
+        """
+        Traverses an existing parameter file and sets paths relative or
+        absolute based on `choice`. Assumes that only keys with the prefix
+        'path_' are paths
+
+        :type choice: str
+        :param choice: choice to set paths as 'relative' (relative to cwd) or
+            'absolute' (absolute path from root)
+        """
+        if choice == "relative":
+            func = os.path.relpath
+        elif choice == "absolute":
+            func = os.path.abspath
+        else:
+            logger.critical(msg.cli(f"`set_paths` choice must be 'relative' or "
+                                    f"'absolute'"))
+            sys.exit(-1)
+
+        logger.info(f"setting paths in parameter to {choice}")
+        lines = open(self._args.parameter_file).readlines()
+        for i, line in enumerate(lines[:]):
+            if line.startswith("path_"):
+                key, val = line.strip().split(":")
+                if val.strip() != "null":
+                    lines[i] = f"{key}: {func(val.strip())}\n"
+                else:
+                    lines[i] = line
+
+        with open(self._args.parameter_file, "w") as f:
+            f.writelines(lines)
+
     def swap(self, module, classname, **kwargs):
         """
         Swap the parameters of an existing parameter file with a new module.
@@ -670,6 +727,31 @@ class SeisFlows:
             workflow.check()
         except AssertionError as e:
             print(msg.cli(str(e), border="=", header="parameter errror"))
+
+    def state(self, choice=None, fid="sfstate.txt", **kwargs):
+        """
+        Manipulate the state file. State filename is set to the default value
+        defined by seisflows.workflow.forward.Forward.__init__()
+        """
+        if not os.path.exists(fid):
+            print(msg.cli(f"Cannot find state file: '{fid}'. Either change "
+                          f"directory or set custom file id with `--fid`",
+                          border="=", header="state file not found"))
+
+        acceptable_args = {None: self._print_modules,
+                           "tasks": self._print_tasks,
+                           "inherit": self._print_inheritance}
+
+        # Ensure that help message is thrown for empty commands
+        if choice not in acceptable_args.keys():
+            self._subparser.print_help()
+            sys.exit(0)
+
+        acceptable_args[choice](*self._args.args, **kwargs)
+
+    def _print_states(self, fid):
+        """Pretty print the States file"""
+
 
     def init(self, **kwargs):
         """
