@@ -232,20 +232,25 @@ class Forward:
                 )
                 self._modules[opt_mod].setup()
 
-        # Generate the state file to keep track of task completion
-        if not os.path.exists(self.path.state_file):
-            with open(self.path.state_file, "w") as f:
-                f.write(f"# SeisFlows State File\n")
-                f.write(f"# {asctime()}\n")
-                f.write(f"# ====================\n")
-                for task in self.task_list:
-                    f.write(f"{task.__name__}: pending")
+        self._generate_state_file()
 
         # Distribute modules to the class namespace. We don't do this at init
         # incase _modules was set as NoneType
         self.solver = self._modules.solver  # NOQA
         self.system = self._modules.system  # NOQA
         self.preprocess = self._modules.preprocess  # NOQA
+
+    def _generate_state_file(self):
+        """Generate the state file to keep track of task completion"""
+        if not os.path.exists(self.path.state_file):
+            with open(self.path.state_file, "w") as f:
+                _line = (f"# SeisFlows State File "
+                         f"(Workflow: {self.__class__.__name__})\n")
+                f.write(f"# {'=' * (len(_line) - 3)}\n")
+                f.write(_line)
+                f.write(f"# {'=' * (len(_line) - 3)}\n")
+                for task in self.task_list:
+                    f.write(f"{task.__name__}: pending\n")
 
     def checkpoint(self):
         """
