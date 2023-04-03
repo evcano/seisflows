@@ -6,6 +6,7 @@ Forward class represents the BASE workflow. All other workflows will build off
 of the scaffolding defined by the Forward class.
 """
 import os
+from glob import glob
 from time import asctime
 
 from seisflows import logger
@@ -357,7 +358,8 @@ class Forward:
 
         if self.data_case == "data":
             logger.info(f"copying data from `path_data`")
-            src = os.path.join(self.path.data, self.solver.source_name, "*")
+            src = glob(os.path.join(self.path.data, self.solver.source_name,
+                                    "*"))
             dst = os.path.join(self.solver.cwd, "traces", "obs", "")
             unix.cp(src, dst)
         elif self.data_case == "synthetic":
