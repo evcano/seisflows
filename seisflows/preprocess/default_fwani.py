@@ -19,23 +19,41 @@ class DefaultFwani(Default):
 
     Parameters
     ----------
-    :type dummy: dummy
-    :param dummy: dummy
+    :type apply_window: bool
+    :param apply_window: mute the entire waveform except on a window centered
+        at the maximum of the waveform envelope
+    :type window_len: float
+    :param window_len: window length in seconds
+    :type window_cc_thr: float
+    :param window_cc_thr: minimum normalized cross-correlation coefficient
+        between observations and synthetics to accept a window
+    :type window_delay_thr: float
+    :param window_delay_thr: maximum traveltime delay between observations and
+        synthetics to accept a window
 
-    paths
+    Paths
     -----
     :type dummy: dummy
     :param dummy: dummy
     ***
     """
-    def __init__(self, **kwargs):
+    __doc__ = Default.__doc__ + __doc__
+
+    def __init__(self, apply_window=False, window_len=None, window_cc_thr=None,
+                 window_delay_thr=None, **kwargs):
         """
         Noise Preprocessing module parameters
 
         :type dummy: dummy
         :param dummy: dummy
+
         """
         super().__init__(**kwargs)
+
+        self.apply_window = apply_window
+        self.window_len = window_len
+        self.window_cc_thr = window_cc_thr
+        self.window_delay_thr = window_delay_thr
 
     def quantify_misfit(self, source_name=None, save_residuals=None,
                         save_adjsrcs=None, iteration=1, step_count=0,
@@ -69,9 +87,19 @@ class DefaultFwani(Default):
         """
         observed, synthetic = self._setup_quantify_misfit(source_name)
 
+        # The names of the source and the reference station are the same
+        sta1 = source_name
+
         for obs_fid, syn_fid in zip(observed, synthetic):
             obs = self.read(fid=obs_fid, data_format=self.obs_data_format)
             syn = self.read(fid=syn_fid, data_format=self.syn_data_format)
+
+            sta2 = os.path.basename(syn_fid).split(".")[0:2]
+            sta2 = f"{sta2[0]}.{sta2[1]}"
+
+            # Skip autocorrelations
+            if sta1 == sta2:
+                continue
 
             # Process observations and synthetics identically
             if self.filter:
@@ -108,11 +136,13 @@ class DefaultFwani(Default):
                     tr_obs_branch = tr_obs.data[idx1:idx2].copy()
                     tr_syn_branch = tr_syn.data[idx1:idx2].copy()
 
-                    tr_obs_branch, tr_syn_branch, skip = self.get_window(tr_obs_branch,
-                        tr_syn_branch, tr_syn_branch.size, tr_syn.stats.delta)
+                    if self.apply_window:
+                        tr_obs_branch, tr_syn_branch, skip = self.max_env_win(
+                            tr_obs_branch, tr_syn_branch, tr_syn_branch.size,
+                            tr_syn.stats.delta)
 
-                    if skip:
-                        continue
+                        if skip:
+                            continue
 
                     # Calculate the misfit value and write to file
                     if save_residuals and self._calculate_misfit:
@@ -140,7 +170,7 @@ class DefaultFwani(Default):
         if save_adjsrcs and self._generate_adjsrc:
             self._check_adjoint_traces(source_name, save_adjsrcs, synthetic)
 
-    def get_window(self, obs, syn, nt, dt):
+    def max_env_win(self, obs, syn, nt, dt):
 
         def _xcorr(s1, s2, dt):
             corr = correlate(s1, s2, mode='full')
@@ -150,12 +180,8 @@ class DefaultFwani(Default):
             max_lag = lags[np.argmax(corr)] * dt
             return cc, max_lag
 
-        win_len = 80.0
-        cc_thr = 0.8
-        lag_thr = 7.0
-
         max_samp = np.argmax(obs ** 2.0)
-        win_ext = int((win_len / 2.0) / dt)
+        win_ext = int((self.window_len / 2.0) / dt)
         ind_lo = int(max_samp - win_ext)
         ind_hi = int(max_samp + win_ext)
 
@@ -168,7 +194,7 @@ class DefaultFwani(Default):
 
             cc, max_lag = _xcorr(obs, syn, dt)
 
-            if cc < cc_thr or np.abs(max_lag) > lag_thr:
+            if cc < self.window_cc_thr or np.abs(max_lag) > self.window_delay_thr:
                 skip =  True
             else:
                 skip = False
