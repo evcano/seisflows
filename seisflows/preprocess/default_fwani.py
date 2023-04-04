@@ -11,7 +11,7 @@ from seisflows.tools import unix
 from seisflows.preprocess.default import Default
 
 
-class DefaultNoise(Default):
+class DefaultFwani(Default):
     """
     Default Noise Preprocess
     ------------------

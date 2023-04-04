@@ -7,7 +7,7 @@ import sys
 from glob import glob
 from seisflows import logger
 from seisflows.tools import msg,unix
-from seisflows.workflow.forward_noise import ForwardNoise
+from seisflows.workflow.forward_fwani import ForwardFwani
 from seisflows.workflow.migration import Migration
 
 

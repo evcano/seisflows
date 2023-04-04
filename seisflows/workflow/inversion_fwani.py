@@ -4,7 +4,7 @@ A workflow similar to Inversion but for ambient noise simulations
 """
 
 from seisflows.workflow.inversion import Inversion
-from seisflows.workflow.migration_noise import MigrationNoise
+from seisflows.workflow.migration_fwani import MigrationFwani
 
 
 class InversionFwani(Inversion, MigrationFwani):
