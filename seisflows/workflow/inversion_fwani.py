@@ -4,6 +4,7 @@ A workflow similar to Inversion but for ambient noise simulations
 """
 import os
 import numpy as np
+from glob import glob
 
 from seisflows import logger
 from seisflows.workflow.inversion import Inversion
@@ -75,7 +76,7 @@ class InversionFwani(Inversion, MigrationFwani):
 
             self.system.run(run_list, path_model=self.path.model_init,
                             save_residuals=os.path.join(self.path.eval_grad,
-                                                        "residuals.txt")
+                                                        "residuals_{src}_{it}.txt")
                             )
             # end: forward/evaluate_initial_misfit
 
@@ -99,12 +100,21 @@ class InversionFwani(Inversion, MigrationFwani):
 
             self.system.run(run_list, path_model=path_model,
                 save_residuals=os.path.join(self.path.eval_grad,
-                                            "residuals.txt")
+                                            "residuals_{src}_{it}.txt")
             )
 
+        # Rename exported synthetic traces so they are not overwritten by
+        # future forward simulations
+        if self.export_traces:
+            unix.mv(src=os.path.join(self.path.output, "solver"),
+                    dst=os.path.join(self.path.output,
+                                     f"solver_{self.iteration:0>2}"))
+
         # Override function to sum residuals into the optimization library
-        residuals = np.loadtxt(os.path.join(self.path.eval_grad,
-                                            "residuals.txt"))
+        residuals_files = glob(os.path.join(self.path.eval_grad,
+                            f"residuals_*_{self.iteration}.txt"))
+
+        residuals = self.preprocess.read_residuals(residuals_files)
         total_misfit = self.preprocess.sum_residuals(residuals)
         self.optimize.save_vector(name="f_new", m=total_misfit)
         # end: inversion/evaluate_initial_misfit
