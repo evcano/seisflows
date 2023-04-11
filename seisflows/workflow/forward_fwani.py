@@ -25,25 +25,31 @@ class ForwardFwani(Forward):
 
     Paths
     -----
-    :type dummy:
-    :param dummy:
+    :type path_scratch_local: str
+    :param path_scratch_local: optional path to a directory where all solver
+        simulations will be carried
     ***
     """
     __doc__ = Forward.__doc__ + __doc__
 
-    def __init__(self, modules=None, **kwargs):
+    def __init__(self, modules=None, path_scratch_local=None, **kwargs):
         """
         Instantiate ForwardNoise-specific parameters
 
         :type dummy:
         :param dummy:
         """
-
         super().__init__(**kwargs)
 
         self._modules = modules
+        self.path_scratch_local = path_scratch_local
 
-    def prepare_data_for_solver(self, **kwargs):
+    def setup(self):
+        super().setup()
+        self.solver.path.scratch_local = self.path_scratch_local
+        self.solver.path.scratch_project = self.solver.path.scratch
+
+    def prepare_data_for_solver(self, move_cwd=True, **kwargs):
         """
         Determines how to provide data to each of the solvers. Either by copying
         data in from a user-provided path, or generating synthetic 'data' using
@@ -55,6 +61,9 @@ class ForwardFwani(Forward):
         """
         logger.info(f"preparing observation data for source "
                     f"{self.solver.source_name}")
+
+        if move_cwd and self.solver.path.scratch_local: 
+            self.move_solver_cwd(dst="local")
 
         if self.data_case == "data":
             logger.info(f"copying data from `path_data`")
@@ -98,7 +107,14 @@ class ForwardFwani(Forward):
                 noise_simulation="2"
             )
 
-    def run_forward_simulations(self, path_model, **kwargs):
+            # Delete generating wavefield
+            unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                      "noise_*.bin")))
+
+        if move_cwd and self.solver.path.scratch_local:
+            self.move_solver_cwd(dst="project")
+
+    def run_forward_simulations(self, path_model, move_cwd=True, **kwargs):
         """
         Performs two forward simulations to compute noise correlations
         for a master receiver according to Tromp et al. (2010). The first
@@ -112,6 +128,9 @@ class ForwardFwani(Forward):
                     f"{self.solver.source_name}")
         logger.debug(f"running forward noise simulation 1 with "
                      f"'{self.solver.__class__.__name__}'")
+
+        if move_cwd and self.solver.path.scratch_local:
+            self.move_solver_cwd(dst="local")
 
         # Run forward simulation 1
         self.solver.import_model(path_model=path_model)
@@ -147,5 +166,23 @@ class ForwardFwani(Forward):
             noise_simulation="2"
         )
 
-        # TODO: Can we delete the generating wavefield files if we invert
-        # only the structure?
+        # Delete generating wavefield if the simulations are for line search
+        if path_model == os.path.join(self.path.eval_func, "model"):
+            unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                      "noise_*.bin")))
+
+        if move_cwd and self.solver.path.scratch_local:
+            self.move_solver_cwd(dst="project")
+
+    def move_solver_cwd(self, dst):
+        project_solver_cwd = os.path.join(self.solver.path.scratch_project,
+                                          self.solver.source_name)
+
+        if dst == "local":
+            self.solver.path.scratch = self.solver.path.scratch_local
+            unix.rm(self.solver.cwd)  # make sure destiny does not exist
+            unix.mv(src=project_solver_cwd, dst=self.solver.cwd)
+        elif dst == "project":
+            unix.rm(project_solver_cwd) # make sure destiny does not exist
+            unix.mv(src=self.solver.cwd, dst=project_solver_cwd)
+            self.solver.path.scratch = self.solver.path.scratch_project

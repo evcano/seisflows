@@ -50,7 +50,7 @@ class MigrationFwani(Migration, ForwardFwani):
                             "SIMULATIONS"))
         self.system.run([self.run_adjoint_simulation])
 
-    def run_adjoint_simulation(self):
+    def run_adjoint_simulation(self, move_cwd=True):
         """Adjoint noise simulation function to be run by system.run()"""
         if self.export_kernels:
             export_kernels = os.path.join(self.path.output, "kernels",
@@ -60,6 +60,10 @@ class MigrationFwani(Migration, ForwardFwani):
 
         logger.info(f"running adjoint noise simulation for source "
                     f"{self.solver.source_name}")
+
+        if move_cwd and self.solver.path.scratch_local:
+            self.move_solver_cwd(dst="local")
+
         # Run adjoint simulations on system. Make kernels discoverable in
         # path `eval_grad`. Optionally export those kernels
         self.solver.adjoint_simulation(
@@ -69,4 +73,9 @@ class MigrationFwani(Migration, ForwardFwani):
             noise_simulation=True
         )
 
-        unix.rm(glob(os.path.join(self.path.output,'noise_eta*.bin')))
+        # Delete generating wavefield
+        unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                  "noise_*.bin")))
+
+        if move_cwd and self.solver.path.scratch_local:
+            self.move_solver_cwd(dst="project")
