@@ -122,14 +122,17 @@ class InversionFwani(Inversion, MigrationFwani):
     def run_compute_kernels(self, path_model, save_residuals):
         """
         """
+        # move solver cwd to local scratch
         if self.solver.path.scratch_local:
             self.move_solver_cwd(dst="local")
             self.preprocess.path.solver = self.solver.path.scratch_local
 
-        self.run_forward_simulations(path_model=path_model, move_cwd=False)
+        self.run_forward_simulations(path_model=path_model, move_cwd=False,
+                                     keep_generating_wavefield=True)
         self.evaluate_objective_function(save_residuals=save_residuals)
         self.run_adjoint_simulation(move_cwd=False)
 
+	# move solver cwd back to project scratch
         if self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
             self.preprocess.path.solver = self.solver.path.scratch_project

@@ -114,7 +114,8 @@ class ForwardFwani(Forward):
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
 
-    def run_forward_simulations(self, path_model, move_cwd=True, **kwargs):
+    def run_forward_simulations(self, path_model, move_cwd=True,
+                                keep_generating_wavefield=False, **kwargs):
         """
         Performs two forward simulations to compute noise correlations
         for a master receiver according to Tromp et al. (2010). The first
@@ -167,7 +168,7 @@ class ForwardFwani(Forward):
         )
 
         # Delete generating wavefield if the simulations are for line search
-        if path_model == os.path.join(self.path.eval_func, "model"):
+        if not keep_generating_wavefield:
             unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
                                       "noise_*.bin")))
 
