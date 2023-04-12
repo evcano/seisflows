@@ -21,7 +21,7 @@ def check_source_names(path_specfem_data, source_prefix, ntask=None):
         would evaluate to something like CMTSOLUTION_001
 
     :type path_specfem_data: str
-    :param path_specfem_data: path to a
+    :param path_specfem_data: path to SPECFEM DATA/ directory
     :type source_prefix: str
     :param source_prefix: type of SPECFEM input source, e.g., CMTSOLUTION
     :type ntask: int
@@ -47,6 +47,72 @@ def check_source_names(path_specfem_data, source_prefix, ntask=None):
 
     # Create internal definition of sources names by stripping prefixes
     names = [os.path.basename(fid).split("_")[-1] for fid in fids]
+
+    return names
+
+
+def check_source_names_noise(path_specfem_data, path_specfem_noise,
+                             ntask=None):
+    """
+    Only for ambient noise simulations.
+
+    Determines names of sources by applying wildcard rule to user-supplied
+    input files. Source names are only provided up to PAR.NTASK and are
+    returned in alphabetical order.
+
+    .. note::
+        SeisFlows expects sources to be stored in the NOISE_TOMOGRAPHY/
+        directory as irec_main_noise_{net}.{sta} where net and sta indicate
+        the network and station codes of the reference receiver
+
+    :type path_specfem_data: str
+    :param path_specfem_data: path to SPECFEM DATA/ directory
+    :type path_specfem_noise: str
+    :param path_specfem_noise: path to SPECFEM NOISE_TOMOGRAPHY/ directory
+    :type ntask: int
+    :parma ntask: if provided, curtails the list of sources up to `ntask`. If
+        None, returns all files found matching the wildcard
+    :rtype: list
+    :return: alphabetically ordered list of source names up to PAR.NTASK
+    """
+    wildcard = "irec_main_noise_*"
+    fids = sorted(glob(os.path.join(path_specfem_noise, wildcard)))
+    if not fids:
+        print(msg.cli("No matching source files when searching PATH for the "
+                      "given WILDCARD", header="source error", border="=",
+                      items=[f"PATH: {path_specfem_noise}",
+                             f"WILDCARD: {wildcard}"]))
+        return
+    if ntask is not None:
+        assert(len(fids) >= ntask), (
+            f"Number of requested tasks/events {ntask} exceeds number "
+            f"of available sources {len(fids)}"
+        )
+        fids = fids[:ntask]
+
+    stations = np.loadtxt(os.path.join(path_specfem_data, "STATIONS"),
+                          usecols=(0, 1), dtype="str")
+    stations = [f"{x[1]}.{x[0]}" for x in stations]
+
+    # Create internal definition of sources names by stripping prefixes
+    names = []
+    for fid in fids:
+        name = os.path.basename(fid).split("_")[-1]
+        # Check that the source file indicates a station in STATIONS
+        irec_main = np.genfromtxt(fid, dtype="int")
+        assert(irec_main >= 1 and irec_main <= len(stations)), (
+            f"Incorrect source file `irec_main_noise_{name}`. "
+            f"It must indicate the line number of a station in"
+            f"the STATIONS file."
+        )
+        irec_main = stations[irec_main-1]
+        # Check that the source name matches the indicated station
+        assert(name == irec_main), (
+            f"Incorrect source name for file `irec_main_noise_{name}`. "
+            f"The source name must match the name of the receiver "
+            f"indicated by the file, in this case `{irec_main}`."
+        )
+        names.append(name)
 
     return names
 

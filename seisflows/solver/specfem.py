@@ -25,7 +25,8 @@ from glob import glob
 from seisflows import logger
 from seisflows.tools import msg, unix
 from seisflows.tools.config import get_task_id, Dict
-from seisflows.tools.specfem import getpar, setpar, check_source_names
+from seisflows.tools.specfem import (getpar, setpar, check_source_names,
+                                     check_source_names_noise)
 
 
 class Specfem:
@@ -80,6 +81,12 @@ class Specfem:
     :type mpiexec: str
     :param mpiexec: MPI executable used to run parallel processes. Should also
         be defined for the system module
+    :type noise_distribution: str
+    :param noise_distribution: Only for ambient noise simulations. How to treat
+        the noise source distribution. Available:
+        ['default': noise distribution coded in SPECFEM, 'external': reads
+        noise distribution from path_model_init, 'invert': fixes the velocity
+        model and inverts for the noise distribution]
 
     Paths
     -----
@@ -92,6 +99,10 @@ class Specfem:
     :param path_specfem_data: path to SPECFEM DATA/ directory which must
         contain the CMTSOLUTION, STATIONS and Par_file files used for
         running SPECFEM
+    :type path_specfem_noise: str
+    :param path_specfem_noise: path to SPECFEM NOISE_TOMOGRAPHY/ directory
+        which must contain S_squared, use_external_noise_distribution,
+        nu_main, and irec_main_noise files
     ***
     """
     def __init__(self, syn_data_format="ascii",  materials="acoustic",
@@ -101,6 +112,7 @@ class Specfem:
                  path_solver=None, path_eval_grad=None,
                  path_data=None, path_specfem_bin=None, path_specfem_data=None,
                  path_model_init=None, path_model_true=None, path_output=None,
+                 noise_distribution="default", path_specfem_noise=None,
                  **kwargs):
         """
         Set default SPECFEM interface parameters
@@ -135,6 +147,7 @@ class Specfem:
         self.smooth_v = smooth_v
         self.components = components
         self.source_prefix = source_prefix or "SOURCE"
+        self.noise_distribution = noise_distribution
 
         # Define internally used directory structure
         self.path = Dict(
@@ -147,6 +160,7 @@ class Specfem:
             specfem_data=path_specfem_data,
             model_init=path_model_init,
             model_true=path_model_true,
+            specfem_noise=path_specfem_noise,
         )
         self.path.mainsolver = os.path.join(self.path.scratch, "mainsolver")
 
@@ -165,12 +179,14 @@ class Specfem:
             "ELASTIC", "ACOUSTIC",  # specfem2d, specfem3d
             "ISOTROPIC", "ANISOTROPIC"  # specfem3d_globe
         ]
+        self._available_noise_distribution = ["default", "external", "invert"]
         # SPECFEM2D specific attributes. Should be overwritten by 3D versions
         self._syn_available_data_formats = ["ASCII", "SU"]
         self._required_binaries = ["xspecfem2D", "xmeshfem2D", "xcombine_sem",
                                    "xsmooth_sem"]
-        self._acceptable_source_prefixes = ["SOURCE", "FORCE", "FORCESOLUTION"]
-        
+        self._acceptable_source_prefixes = ["SOURCE", "FORCE", "FORCESOLUTION",
+                                            "irec_main_noise"]
+
         # Empty variable that will need to be overwritten by SPECFEM3D_GLOBE
         self._regions = None
 
@@ -215,9 +231,10 @@ class Specfem:
             f"SPECFEM `source_prefix` must be in "
             f"{self._acceptable_source_prefixes}"
             )
-        assert(glob(os.path.join(self.path.specfem_data,
-                                 f"{self.source_prefix}*"))), (
-            f"No source files with prefix {self.source_prefix} found in DATA/")
+        if self.source_prefix != "irec_main_noise":
+            assert(glob(os.path.join(self.path.specfem_data,
+                                     f"{self.source_prefix}*"))), (
+                f"No source files with prefix {self.source_prefix} found in DATA/")
 
         # Check that model type is set correctly in the Par_file
         model_type = getpar(key="MODEL",
@@ -247,10 +264,11 @@ class Specfem:
                 f"`path_model_true` is empty but should have model files"
 
         # Check that the number of tasks/events matches the number of events
-        self._source_names = check_source_names(
-            path_specfem_data=self.path.specfem_data,
-            source_prefix=self.source_prefix, ntask=self.ntask
-        )
+        if self.source_prefix != "irec_main_noise":
+            self._source_names = check_source_names(
+                path_specfem_data=self.path.specfem_data,
+                source_prefix=self.source_prefix, ntask=self.ntask
+            )
 
         assert(isinstance(self.density, bool)), \
             f"solver `density` must be True (variable) or False (constant)"
@@ -270,10 +288,46 @@ class Specfem:
                             f"workflow"
                             )
 
+        # Check requirements for ambient noise simulations
+        if self.source_prefix == "irec_main_noise":
+            # Check that SPECFEM/NOISE_TOMOGRAPHY directory exists
+            assert(self.path.specfem_noise is not None and
+                   os.path.exists(self.path.specfem_noise)), (
+                f"`path_specfem_noise` must exist and must point to directory "
+                f"containing files required for ambient noise simulations"
+            )
+            for fid in ["S_squared", "use_external_noise_distribution"]:
+                assert(os.path.exists(os.path.join(self.path.specfem_noise, fid))), (
+                    f"NOISE_TOMOGRAPHY/{fid} does not exist but is required by "
+                    f"SeisFlows solver"
+                )
+
+            # Make sure source files exist
+            assert(glob(os.path.join(self.path.specfem_noise,
+                                     f"{self.source_prefix}*"))), (
+                f"No source files with prefix {self.source_prefix} found in "
+                f"NOISE_TOMOGRAPHY/"
+            )
+
+            # Check that the number of tasks/events matches the number of events
+            self._source_names = check_source_names_noise(
+                path_specfem_data=self.path.specfem_data,
+                path_specfem_noise=self.path.specfem_noise,
+                ntask=self.ntask
+            )
+
+            # Check noise source distribution
+            assert(self.noise_distribution in self._available_noise_distribution), (
+                f"`noise_distribution` must be in {self._available_noise_distribution}"
+            )
+            #TODO: Check noise distribution binary files if EXTERNAL
+            #TODO: Modify self._parameters if INVERT
+
     @property
     def source_names(self):
         """
         Returns list of source names which should be stored in PAR.SPECFEM_DATA
+        or PAR.SPECFEM_NOISE in the case of ambient noise simulations
         Source names are expected to match the following wildcard,
         'PREFIX_*' where PREFIX is something like 'CMTSOLUTION' or 'FORCE'
 
@@ -471,7 +525,8 @@ class Specfem:
         self._export_starting_models()
 
     def forward_simulation(self, executables=None, save_traces=False,
-                           export_traces=False, save_forward=True, **kwargs):
+                           export_traces=False, noise_simulation="0",
+                           **kwargs):
         """
         Wrapper for SPECFEM binaries: 'xmeshfem?D' 'xgenerate_databases',
                                       'xspecfem?D'
@@ -497,18 +552,23 @@ class Specfem:
         :param export_traces: export traces from the scratch directory to a more
             permanent storage location. i.e., copy files from their original
             location
-        :type save_forward: bool
-        :param save_forward: whether to turn on the flag for saving the forward
-            arrays which are used for adjoint simulations. Not required if only
-            running forward simulations.
+        :type noise_simulation: str
+        :param noise_simulation: defines the type of ambient noise simulation
+            performed by SPECFEM. Default is "0" (no noise simulation)
         """
         if executables is None:
             executables = ["bin/xmeshfem2D", "bin/xspecfem2D"]
 
         unix.cd(self.cwd)
+
+        if noise_simulation == "1":
+            save_forward = ".false."
+        else:
+            save_forward = ".true."
+
         setpar(key="SIMULATION_TYPE", val="1", file="DATA/Par_file")
-        setpar(key="SAVE_FORWARD", val=f".{str(save_forward).lower()}.",
-               file="DATA/Par_file")
+        setpar(key="SAVE_FORWARD", val=save_forward, file="DATA/Par_file")
+        setpar(key="NOISE_TOMOGRAPHY", val=noise_simulation, file="DATA/Par_file")
 
         # Calling subprocess.run() for each of the binary executables listed
         for exc in executables:
@@ -539,7 +599,7 @@ class Specfem:
             )
 
     def adjoint_simulation(self, executables=None, save_kernels=False,
-                           export_kernels=False):
+                           export_kernels=False, noise_simulation=False):
         """
         Wrapper for SPECFEM binary 'xspecfem?D'
 
@@ -568,14 +628,23 @@ class Specfem:
             directory to a more permanent storage location. i.e., copy files
             from their original location. Note that kernel file sizes are LARGE,
             so exporting kernels can lead to massive storage requirements.
+        :type noise_simulation: bool
+        :param noise_simulation: indicates if the adjoint simulation is a noise
+            simulation
         """
         if executables is None:
             executables = ["bin/xspecfem2D"]
 
         unix.cd(self.cwd)
 
+        if noise_simulation:
+            noise_simulation = "3"
+        else:
+            noise_simulation = "0"
+
         setpar(key="SIMULATION_TYPE", val="3", file="DATA/Par_file")
         setpar(key="SAVE_FORWARD", val=".false.", file="DATA/Par_file")
+        setpar(key="NOISE_TOMOGRAPHY", val=noise_simulation, file="DATA/Par_file")
 
         unix.rm("SEM")
         unix.ln("traces/adj", "SEM")
@@ -857,6 +926,9 @@ class Specfem:
                                "traces/syn", "traces/adj", self.model_databases,
                                self.kernel_databases}
 
+        if self.source_prefix == "irec_main_noise":
+            _required_structure.add("NOISE_TOMOGRAPHY")
+
         # Allow this function to be called on system or in serial
         if cwd is None:
             cwd = self.cwd
@@ -884,11 +956,24 @@ class Specfem:
         dst = os.path.join(cwd, "DATA", "")
         unix.cp(src, dst)
 
+        # Copy all input NOISE_TOMOGRAPHY/ files except the source files
+        if self.source_prefix == "irec_main_noise":
+            src = glob(os.path.join(self.path.specfem_noise, "*"))
+            src = [_ for _ in src if self.source_prefix not in _]
+            dst = os.path.join(cwd, "NOISE_TOMOGRAPHY", "")
+            unix.cp(src, dst)
+
         # Symlink event source specifically, only retain source prefix
-        src = os.path.join(self.path.specfem_data,
-                           f"{self.source_prefix}_{source_name}")
-        dst = os.path.join(cwd, "DATA", self.source_prefix)
-        unix.ln(src, dst)
+        if self.source_prefix == "irec_main_noise":
+            src = os.path.join(self.path.specfem_noise,
+                               f"{self.source_prefix}_{source_name}")
+            dst = os.path.join(cwd, "NOISE_TOMOGRAPHY", self.source_prefix)
+            unix.ln(src, dst)
+        else:
+            src = os.path.join(self.path.specfem_data,
+                               f"{self.source_prefix}_{source_name}")
+            dst = os.path.join(cwd, "DATA", self.source_prefix)
+            unix.ln(src, dst)
 
         # Symlink TaskID==0 as mainsolver in solver directory for convenience
         if self.source_names.index(source_name) == 0:

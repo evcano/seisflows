@@ -55,7 +55,8 @@ class Specfem3D(Specfem):
             self._parameters += ["vp", "vs"]
 
         # Overwriting the base class parameters
-        self._acceptable_source_prefixes = ["CMTSOLUTION", "FORCESOLUTION"]
+        self._acceptable_source_prefixes = ["CMTSOLUTION", "FORCESOLUTION",
+                                            "irec_main_noise"]
         self._required_binaries = ["xspecfem3D", "xmeshfem3D",
                                    "xgenerate_databases", "xcombine_sem",
                                    "xsmooth_sem", "xcombine_vol_data_vtk"]
@@ -63,6 +64,20 @@ class Specfem3D(Specfem):
         # Internally used parameters set by functions within class
         self._model_databases = None
         self.path._vtk_files = os.path.join(self.path.scratch, "vtk_files")
+
+    def check(self):
+        """
+        Checks parameter validity for SPECFEM3D parameters
+        """
+        super().check()
+
+        # Check ambient noise source component
+        if self.source_prefix == "irec_main_noise":
+            fid = "nu_main"
+            assert(os.path.exists(os.path.join(self.path.specfem_noise, fid))), (
+                f"NOISE_TOMOGRAPHY/{fid} does not exist but is required by "
+                f"SeisFlows solver"
+            )
 
     def setup(self):
         """
@@ -110,7 +125,8 @@ class Specfem3D(Specfem):
         return self.model_databases
 
     def forward_simulation(self, executables=None, save_traces=False,
-                           export_traces=False, save_forward=True, **kwargs):
+                           export_traces=False, noise_simulation="0",
+                           **kwargs):
         """
         Calls SPECFEM3D forward solver, exports solver outputs to traces dir
 
@@ -130,10 +146,9 @@ class Specfem3D(Specfem):
         :param export_traces: export traces from the scratch directory to a more
             permanent storage location. i.e., copy files from their original
             location
-        :type save_forward: bool
-        :param save_forward: whether to turn on the flag for saving the forward
-            arrays which are used for adjoint simulations. Not required if only
-            running forward simulations.
+        :type noise_simulation: str
+        :param noise_simulation: defines the type of ambient noise simulation
+            performed by SPECFEM. Default is "0" (no noise simulation)
         """
         unix.cd(self.cwd)
 
@@ -154,7 +169,7 @@ class Specfem3D(Specfem):
         super().forward_simulation(executables=executables,
                                    save_traces=save_traces,
                                    export_traces=export_traces,
-                                   save_forward=save_forward
+                                   noise_simulation=noise_simulation,
                                    )
 
         if self.prune_scratch:
@@ -162,7 +177,7 @@ class Specfem3D(Specfem):
             unix.rm(glob(os.path.join(self.model_databases, "proc*_*.vt?")))
 
     def adjoint_simulation(self, executables=None, save_kernels=False,
-                           export_kernels=False):
+                           export_kernels=False, noise_simulation=False):
         """
         Calls SPECFEM3D adjoint solver, creates the `SEM` folder with adjoint
         traces which is required by the adjoint solver
@@ -184,6 +199,9 @@ class Specfem3D(Specfem):
             directory to a more permanent storage location. i.e., copy files
             from their original location. Note that kernel file sizes are LARGE,
             so exporting kernels can lead to massive storage requirements.
+        :type noise_simulation: bool
+        :param noise_simulation: indicates if the adjoint simulation is a noise
+            simulation
         """
         if executables is None:
             executables = ["bin/xspecfem3D"]
@@ -201,7 +219,8 @@ class Specfem3D(Specfem):
 
         super().adjoint_simulation(executables=executables,
                                    save_kernels=save_kernels,
-                                   export_kernels=export_kernels)
+                                   export_kernels=export_kernels,
+                                   noise_simulation=noise_simulation)
 
         if self.prune_scratch:
             for glob_key in ["proc??????_save_forward_array.bin",

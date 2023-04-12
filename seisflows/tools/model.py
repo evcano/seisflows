@@ -506,7 +506,7 @@ class Model:
         model = Dict()
         coords = Dict()
         ngll = []
-        data = np.load(file=file)
+        data = np.load(file=file, allow_pickle=True)
         for i, key in enumerate(data.files):
             if key == "fmt":
                 continue

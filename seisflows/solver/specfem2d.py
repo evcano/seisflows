@@ -54,8 +54,9 @@ class Specfem2D(Specfem):
         Append coordinate files to exported model files so that we can use
         them for plotting later
         """
-        source_file = os.path.join(self.path.specfem_data, self.source_prefix)
-        self._f0 = getpar(key="f0", file=source_file)[1]
+        if self.source_prefix != "irec_main_noise":
+            source_file = os.path.join(self.path.specfem_data, self.source_prefix)
+            self._f0 = getpar(key="f0", file=source_file)[1]
 
         par_file = os.path.join(self.path.specfem_data, "Par_file")
         if self.multiples:
