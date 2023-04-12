@@ -136,6 +136,7 @@ class InversionFwani(Inversion, MigrationFwani):
         if self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
             self.preprocess.path.solver = self.solver.path.scratch_project
+            unix.cd(self.solver.cwd)
 
     @property
     def task_list(self):

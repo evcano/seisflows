@@ -113,6 +113,7 @@ class ForwardFwani(Forward):
 
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
+            unix.cd(self.solver.cwd)
 
     def run_forward_simulations(self, path_model, move_cwd=True,
                                 keep_generating_wavefield=False, **kwargs):
@@ -174,6 +175,7 @@ class ForwardFwani(Forward):
 
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
+            unix.cd(self.solver.cwd)
 
     def move_solver_cwd(self, dst):
         project_solver_cwd = os.path.join(self.solver.path.scratch_project,
