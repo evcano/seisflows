@@ -59,6 +59,10 @@ class ForwardFwani(Forward):
             Must be run by system.run() so that solvers are assigned individual
             task ids and working directories
         """
+        source_state = self._read_source_state_file()
+        if source_state["prepare_data_for_solver"] == "completed":
+            return
+
         logger.info(f"preparing observation data for source "
                     f"{self.solver.source_name}")
 
@@ -115,6 +119,9 @@ class ForwardFwani(Forward):
             self.move_solver_cwd(dst="project")
             unix.cd(self.solver.cwd)
 
+        source_state["prepare_data_for_solver"] = "completed"
+        self.checkpoint_source(source_state)
+
     def run_forward_simulations(self, path_model, move_cwd=True,
                                 keep_generating_wavefield=False, **kwargs):
         """
@@ -123,6 +130,10 @@ class ForwardFwani(Forward):
         simulation computes the `generating wavefield` and the second one
         the `correlation wavefield`.
         """
+        source_state = self._read_source_state_file()
+        if source_state["run_forward_simulations"] == "completed":
+            return
+
         assert(os.path.exists(path_model)), \
             f"Model path for objective function does not exist"
 
@@ -176,6 +187,9 @@ class ForwardFwani(Forward):
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
             unix.cd(self.solver.cwd)
+
+        source_state["run_forward_simulations"] = "completed"
+        self.checkpoint_source(source_state)
 
     def move_solver_cwd(self, dst):
         project_solver_cwd = os.path.join(self.solver.path.scratch_project,

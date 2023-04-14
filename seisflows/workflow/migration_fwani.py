@@ -52,6 +52,10 @@ class MigrationFwani(Migration, ForwardFwani):
 
     def run_adjoint_simulation(self, move_cwd=True):
         """Adjoint noise simulation function to be run by system.run()"""
+        source_state = self._read_source_state_file()
+        if source_state["run_adjoint_simulation"] == "completed":
+            return
+
         if self.export_kernels:
             export_kernels = os.path.join(self.path.output, "kernels",
                                           self.solver.source_name)
@@ -79,3 +83,6 @@ class MigrationFwani(Migration, ForwardFwani):
 
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
+
+        source_state["run_adjoint_simulation"] = "completed"
+        self.checkpoint_source(source_state)
