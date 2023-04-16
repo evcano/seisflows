@@ -90,6 +90,11 @@ class DefaultFwani(Default):
         # The names of the source and the reference station are the same
         sta1 = source_name
 
+        # Make sure residuals files does not exist so we dont append residuals
+        # from previous simulations
+        if os.path.exists(save_residuals):
+            unix.rm(save_residuals)
+
         for obs_fid, syn_fid in zip(observed, synthetic):
             obs = self.read(fid=obs_fid, data_format=self.obs_data_format)
             syn = self.read(fid=syn_fid, data_format=self.syn_data_format)

@@ -136,8 +136,8 @@ class Ibex(Cluster):
             f"sbatch",
             f"{self.slurm_args or ''}",
             f"--job-name={self.title}",
-            f"--output={self.path.output_log}",
-            f"--error={self.path.output_log}",
+            f"--output={os.path.join(self.path.workdir,'out.log')}",
+            f"--error={os.path.join(self.path.workdir,'err.log')}",
             f"--ntasks=1",
             f"--nodes=1",
             f"--time={self._walltime}"

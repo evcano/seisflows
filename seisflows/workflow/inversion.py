@@ -202,10 +202,10 @@ class Inversion(Migration):
             lines = f.readlines()
         # Clear out the previous 'iteration' line and add in new
         for i, line in enumerate(lines[:]):
-            if "iteration:" in line:
+            if line[0:10] == "iteration:":
                 lines.pop(i)
                 break
-        lines.append(f"iteration: {self.iteration}")
+        lines.append(f"iteration: {self.iteration}\n")
 
         # Rewrite checkpoint file with new iteration line
         with open(self.path.state_file, "w") as f:
@@ -222,6 +222,10 @@ class Inversion(Migration):
             Must be run by system.run() so that solvers are assigned individual
             task ids/ working directories.
         """
+        source_state = self._read_source_state_file()
+        if source_state["evaluate_objective_function"] == "completed":
+            return
+
         logger.debug(f"quantifying misfit with "
                      f"'{self.preprocess.__class__.__name__}'")
 
@@ -247,6 +251,9 @@ class Inversion(Migration):
             iteration=self.iteration,
             step_count=self.optimize.step_count,
         )
+
+        source_state["evaluate_objective_function"] = "completed"
+        self.checkpoint_source(source_state)
 
     def evaluate_initial_misfit(self):
         """
@@ -389,7 +396,10 @@ class Inversion(Migration):
                             f"{self.optimize.step_count + 1:0>2}"))
 
         # Run fwd solver with the model 'm_try'. Corresponding misfit is 'f_try'
+        self._generate_source_state_files(
+            f"perform_line_search {self.optimize.step_count + 1:0>2}")
         self._evaluate_line_search_misfit()
+        self._delete_source_state_files()
 
         # Increment step count, calculate new step length/model, check misfit
         m_try, alpha, status = self.optimize.update_line_search()

@@ -103,6 +103,11 @@ class Migration(Forward):
                 self.evaluate_gradient_from_kernels
                 ]
 
+    @property
+    def func_list(self):
+        return ["prepare_data_for_solver", "run_forward_simulations",
+                "evaluate_objective_function", "run_adjoint_simulation"]
+
     def run_adjoint_simulations(self):
         """
         Performs adjoint simulations for a single given event. File manipulation
@@ -110,6 +115,10 @@ class Migration(Forward):
         """
         def run_adjoint_simulation():
             """Adjoint simulation function to be run by system.run()"""
+            source_state = self._read_source_state_file()
+            if source_state["run_adjoint_simulation"] == "completed":
+                return
+
             if self.export_kernels:
                 export_kernels = os.path.join(self.path.output, "kernels",
                                               self.solver.source_name)
@@ -125,6 +134,9 @@ class Migration(Forward):
                                           self.solver.source_name, ""),
                 export_kernels=export_kernels
             )
+
+            source_state["run_adjoint_simulation"] = "completed"
+            self.checkpoint_source(source_state)
 
         logger.info(msg.mnr("EVALUATING EVENT KERNELS W/ ADJOINT SIMULATIONS"))
         self.system.run([run_adjoint_simulation])

@@ -46,8 +46,55 @@ class ForwardFwani(Forward):
 
     def setup(self):
         super().setup()
+
+        # traces must be exported so we can recover the observations when
+        # `data_case: synthetic`
+        assert(self.export_traces), ("Workflow `ForwardFwani` requires "
+                                     "`export_traces: True`")
+
         self.solver.path.scratch_local = self.path_scratch_local
         self.solver.path.scratch_project = self.solver.path.scratch
+
+        # Some solver directories can be lost when using a local scratch.
+        # The structure of the missing directories is always initialied during
+        # the workflow setup (on solver.setup). However, the model and
+        # observations are not imported during setup. Here we import the
+        # initial model and observations for each solver directory. This way we
+        # make sure that lost solver directories have all the neccesary files
+        # to resume the workflow. The inital model is overwritten later during
+        # the workflow as neccesary (i.e., see solver.run_forward_simulations).
+
+        # NOTE: `run_adjoint_simulation` does NOT import the model. It will
+        # use whatever model is on the solver directory. Therefore, if the
+        # workflow is resumed during `run_adjoint_simulations` the adjoint
+        # simulations will use the initial model and the result will be wrong.
+        # However, `InversionFwani` never resumes on `run_adjoint_simulations`
+        # so there should be no problem on this workflow. Be careful.
+
+        if self.path_scratch_local:
+            for source_name in self.solver.source_names:
+                cwd = os.path.join(self.solver.path.scratch, source_name)
+                cwd_observations = os.path.join(cwd, "traces", "obs")
+                cwd_databases = os.path.join(cwd, self.solver.model_databases)
+
+                # import initial model
+                model_files = glob(os.path.join(self.solver.path.model_init,
+                                                f"*{self.solver._ext}"))
+                unix.cp(src=model_files, dst=cwd_databases)
+
+                # import observations
+                if self.data_case == "synthetic":
+                    obs = glob(os.path.join(self.path.output,
+                                            source_name, "obs", "*"))
+                    if not obs:
+                        # if there are no observations at this point it means
+                        # that they will be computed with
+                        # `prepare_data_for_solver`
+                        continue
+                elif self.data_case == "data":
+                    obs = glob(os.path.join(self.path.data,
+                                            source_name, "*"))
+                unix.cp(src=obs, dst=cwd_observations)
 
     def prepare_data_for_solver(self, move_cwd=True, **kwargs):
         """
@@ -59,6 +106,10 @@ class ForwardFwani(Forward):
             Must be run by system.run() so that solvers are assigned individual
             task ids and working directories
         """
+        source_state = self._read_source_state_file()
+        if source_state["prepare_data_for_solver"] == "completed":
+            return
+
         logger.info(f"preparing observation data for source "
                     f"{self.solver.source_name}")
 
@@ -115,6 +166,9 @@ class ForwardFwani(Forward):
             self.move_solver_cwd(dst="project")
             unix.cd(self.solver.cwd)
 
+        source_state["prepare_data_for_solver"] = "completed"
+        self.checkpoint_source(source_state)
+
     def run_forward_simulations(self, path_model, move_cwd=True,
                                 keep_generating_wavefield=False, **kwargs):
         """
@@ -123,6 +177,10 @@ class ForwardFwani(Forward):
         simulation computes the `generating wavefield` and the second one
         the `correlation wavefield`.
         """
+        source_state = self._read_source_state_file()
+        if source_state["run_forward_simulations"] == "completed":
+            return
+
         assert(os.path.exists(path_model)), \
             f"Model path for objective function does not exist"
 
@@ -176,6 +234,9 @@ class ForwardFwani(Forward):
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
             unix.cd(self.solver.cwd)
+
+        source_state["run_forward_simulations"] = "completed"
+        self.checkpoint_source(source_state)
 
     def move_solver_cwd(self, dst):
         project_solver_cwd = os.path.join(self.solver.path.scratch_project,

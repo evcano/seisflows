@@ -124,6 +124,9 @@ class Forward:
                     continue
                 key, val = line.strip().split(":")
                 self._states[key] = val.strip()
+        else:
+            for func in self.task_list:
+                self._states[func.__name__] = "pending"
 
     @property
     def task_list(self):
@@ -146,6 +149,16 @@ class Forward:
         :return: list of methods to call in order during a workflow
         """
         return [self.evaluate_initial_misfit]
+
+    @property
+    def func_list(self):
+        return ["prepare_data_for_solver", "run_forward_simulations",
+                "evaluate_objective_function"]
+
+    @property
+    def source_state_file(self):
+        return os.path.join(self.path.scratch,
+                            f"sfstate_{self.solver.source_name}.txt")
 
     def check(self):
         """
@@ -233,20 +246,13 @@ class Forward:
                 )
                 self._modules[opt_mod].setup()
 
-        # Generate the state file to keep track of task completion
-        if not os.path.exists(self.path.state_file):
-            with open(self.path.state_file, "w") as f:
-                f.write(f"# SeisFlows State File\n")
-                f.write(f"# {asctime()}\n")
-                f.write(f"# Acceptable states: 'completed', 'failed', "
-                        f"'pending'\n")
-                f.write(f"# =======================================\n")
-
         # Distribute modules to the class namespace. We don't do this at init
         # incase _modules was set as NoneType
         self.solver = self._modules.solver  # NOQA
         self.system = self._modules.system  # NOQA
         self.preprocess = self._modules.preprocess  # NOQA
+
+        self._generate_state_file()
 
     def checkpoint(self):
         """
@@ -264,6 +270,19 @@ class Forward:
                 if line.startswith("#"):
                     f.write(line)
             for key, val in self._states.items():
+                f.write(f"{key}: {val}\n")
+
+    def checkpoint_source(self, source_state):
+        # Grab State file header values
+        with open(self.source_state_file, "r") as f:
+            lines = f.readlines()
+
+        with open(self.source_state_file, "w") as f:
+            # Rewrite header values
+            for line in lines:
+                if line.startswith("#"):
+                    f.write(line)
+            for key, val in source_state.items():
                 f.write(f"{key}: {val}\n")
 
     def run(self):
@@ -285,9 +304,11 @@ class Forward:
             # encountered for the first time
             else:
                 try:
+                    self._generate_source_state_files(func.__name__)
                     func()
                     self._states[func.__name__] = "completed"
                     self.checkpoint()
+                    self._delete_source_state_files()
                 except Exception as e:
                     self._states[func.__name__] = "failed"
                     self.checkpoint()
@@ -353,6 +374,10 @@ class Forward:
             Must be run by system.run() so that solvers are assigned individual
             task ids and working directories
         """
+        source_state = self._read_source_state_file()
+        if source_state["prepare_data_for_solver"] == "completed":
+            return
+
         logger.info(f"preparing observation data for source "
                     f"{self.solver.source_name}")
 
@@ -379,6 +404,9 @@ class Forward:
                 export_traces=export_traces
             )
 
+        source_state["prepare_data_for_solver"] = "completed"
+        self.checkpoint_source(source_state)
+
     def run_forward_simulations(self, path_model, **kwargs):
         """
         Performs forward simulation for a single given event.
@@ -390,6 +418,10 @@ class Forward:
             Must be run by system.run() so that solvers are assigned individual
             task ids/ working directories.
         """
+        source_state = self._read_source_state_file()
+        if source_state["run_forward_simulations"] == "completed":
+            return
+
         assert(os.path.exists(path_model)), \
             f"Model path for objective function does not exist"
 
@@ -413,6 +445,9 @@ class Forward:
             export_traces=export_traces
         )
 
+        source_state["run_forward_simulations"] = "completed"
+        self.checkpoint_source(source_state)
+
     def evaluate_objective_function(self, save_residuals=False, **kwargs):
         """
         Uses the preprocess module to evaluate the misfit/objective function
@@ -422,6 +457,10 @@ class Forward:
             Must be run by system.run() so that solvers are assigned individual
             task ids/ working directories.
         """
+        source_state = self._read_source_state_file()
+        if source_state["evaluate_objective_function"] == "completed":
+            return
+
         if self.preprocess is None:
             logger.debug("no preprocessing module selected, will not evaluate "
                          "objective function")
@@ -443,3 +482,44 @@ class Forward:
             save_residuals=save_residuals,
             export_residuals=export_residuals
         )
+
+        source_state["evaluate_objective_function"] = "completed"
+        self.checkpoint_source(source_state)
+
+    def _generate_state_file(self):
+        # Generate the state file to keep track of task completion
+        if not os.path.exists(self.path.state_file):
+            with open(self.path.state_file, "w") as f:
+                _line = (f"# SeisFlows State File "
+                         f"(Workflow: {self.__class__.__name__})\n")
+                f.write(_line)
+                for key, val in self._states.items():
+                    f.write(f"{key}: {val}\n")
+
+    def _generate_source_state_files(self, task):
+        for source_name in self.solver.source_names:
+            source_state_file = os.path.join(self.path.scratch,
+                                             f"sfstate_{source_name}.txt")
+            if not os.path.exists(source_state_file):
+                with open(source_state_file, "w") as f:
+                    _line = (f"# SeisFlows State File "
+                             f"(Task: {task} / Source: {source_name})\n")
+                    f.write(_line)
+                    for func in self.func_list:
+                        f.write(f"{func}: pending\n")
+
+    def _delete_source_state_files(self):
+        for source_name in self.solver.source_names:
+            source_state_file = os.path.join(self.path.scratch,
+                                             f"sfstate_{source_name}.txt")
+            unix.rm(source_state_file)
+
+    def _read_source_state_file(self):
+        source_state = {}
+        for line in open(self.source_state_file, "r").readlines():
+            if line.startswith("#"):
+                continue
+            key, val = line.strip().split(":")
+            source_state[key] = val.strip()
+        return source_state
+

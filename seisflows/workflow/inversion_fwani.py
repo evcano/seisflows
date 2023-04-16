@@ -43,6 +43,22 @@ class InversionFwani(Inversion, MigrationFwani):
 
         self._modules = modules
 
+    @property
+    def task_list(self):
+        return [self.compute_kernels,
+                self.postprocess_event_kernels,
+                self.evaluate_gradient_from_kernels,
+                self.initialize_line_search,
+                self.perform_line_search,
+                self.finalize_iteration
+               ]
+
+    @property
+    def func_list(self):
+        return ["prepare_data_for_solver", "run_forward_simulations",
+                "evaluate_objective_function", "run_adjoint_simulation",
+                "run_compute_kernels"]
+
     def compute_kernels(self):
         """
         Does evaluate_initial_misfit and run_adjoint_simulations
@@ -122,6 +138,17 @@ class InversionFwani(Inversion, MigrationFwani):
     def run_compute_kernels(self, path_model, save_residuals):
         """
         """
+        source_state = self._read_source_state_file()
+        if source_state["run_compute_kernels"] == "completed":
+            return
+
+        # these functions must always execute
+        source_state["run_forward_simulations"] = "pending"
+        source_state["evaluate_objective_function"] = "pending"
+        source_state["run_adjoint_simulation"] = "pending"
+        self.checkpoint_source(source_state)
+
+
         # move solver cwd to local scratch
         if self.solver.path.scratch_local:
             self.move_solver_cwd(dst="local")
@@ -132,18 +159,15 @@ class InversionFwani(Inversion, MigrationFwani):
         self.evaluate_objective_function(save_residuals=save_residuals)
         self.run_adjoint_simulation(move_cwd=False)
 
-	# move solver cwd back to project scratch
+        # move solver cwd back to project scratch
         if self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
             self.preprocess.path.solver = self.solver.path.scratch_project
             unix.cd(self.solver.cwd)
 
-    @property
-    def task_list(self):
-        return [self.compute_kernels,
-                self.postprocess_event_kernels,
-                self.evaluate_gradient_from_kernels,
-                self.initialize_line_search,
-                self.perform_line_search,
-                self.finalize_iteration
-               ]
+        # at this point the source state file is modified
+        # therefore read it again
+        source_state = self._read_source_state_file()
+
+        source_state["run_compute_kernels"] = "completed"
+        self.checkpoint_source(source_state)
