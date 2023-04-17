@@ -73,16 +73,35 @@ class ForwardFwani(Forward):
 
         if self.path_scratch_local:
             for source_name in self.solver.source_names:
+                source_state_file = os.path.join(self.path.scratch,
+                                                 "sfstate_{source_name}.txt")
+                # If the source state file does not exists it means the
+                # workflow is starting, thus, the initial model and
+                # observations will be imported later not here
+                if not os.path.exists(source_state_file):
+                    continue
+
                 cwd = os.path.join(self.solver.path.scratch, source_name)
                 cwd_observations = os.path.join(cwd, "traces", "obs")
                 cwd_databases = os.path.join(cwd, self.solver.model_databases)
 
                 # import initial model
+                cwd_model_files = glob(os.path.join(cwd_databases,
+                                                    f"*{self.solver._ext}"))
+                if cwd_model_files:
+                    # the model already exists, no need to import it
+                    continue
+
                 model_files = glob(os.path.join(self.solver.path.model_init,
                                                 f"*{self.solver._ext}"))
                 unix.cp(src=model_files, dst=cwd_databases)
 
                 # import observations
+                cwd_obs = glob(os.path.join(cwd_observations, "*"))
+                if cwd_obs:
+                    # observations already exists, no need to import them
+                    continue
+
                 if self.data_case == "synthetic":
                     obs = glob(os.path.join(self.path.output,
                                             source_name, "obs", "*"))
@@ -158,9 +177,14 @@ class ForwardFwani(Forward):
                 noise_simulation="2"
             )
 
-            # Delete generating wavefield
             unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
                                       "noise_*.bin")))
+
+            unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                      "lastframe_*.bin")))
+
+            unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                      "pml_interface_*.bin")))
 
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
@@ -170,7 +194,7 @@ class ForwardFwani(Forward):
         self.checkpoint_source(source_state)
 
     def run_forward_simulations(self, path_model, move_cwd=True,
-                                keep_generating_wavefield=False, **kwargs):
+                                delete_wavefield_arrays=True, **kwargs):
         """
         Performs two forward simulations to compute noise correlations
         for a master receiver according to Tromp et al. (2010). The first
@@ -226,10 +250,16 @@ class ForwardFwani(Forward):
             noise_simulation="2"
         )
 
-        # Delete generating wavefield if the simulations are for line search
-        if not keep_generating_wavefield:
+        # Delete large binary files related to wavefield snapshots
+        if delete_wavefield_arrays:
             unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
                                       "noise_*.bin")))
+
+            unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                      "lastframe_*.bin")))
+
+            unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                      "pml_interface_*.bin")))
 
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")

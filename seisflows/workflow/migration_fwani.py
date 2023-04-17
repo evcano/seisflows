@@ -77,9 +77,15 @@ class MigrationFwani(Migration, ForwardFwani):
             noise_simulation=True
         )
 
-        # Delete generating wavefield
+        # Delete large binary files related to wavefield snapshots
         unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
                                   "noise_*.bin")))
+
+        unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                  "pml_interface_*.bin")))
+
+        unix.rm(glob(os.path.join(self.solver.cwd, "OUTPUT_FILES",
+                                  "lastframe_*.bin")))
 
         if move_cwd and self.solver.path.scratch_local:
             self.move_solver_cwd(dst="project")
