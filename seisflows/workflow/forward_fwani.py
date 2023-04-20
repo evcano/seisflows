@@ -74,7 +74,7 @@ class ForwardFwani(Forward):
         if self.path_scratch_local:
             for source_name in self.solver.source_names:
                 source_state_file = os.path.join(self.path.scratch,
-                                                 "sfstate_{source_name}.txt")
+                                                 f"sfstate_{source_name}.txt")
                 # If the source state file does not exists it means the
                 # workflow is starting, thus, the initial model and
                 # observations will be imported later not here
