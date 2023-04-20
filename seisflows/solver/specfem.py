@@ -819,6 +819,25 @@ class Specfem:
         :raises SystemExit: If external numerical solver return any failure
             code while running
         """
+        def check_mpi_exit_error():
+            """
+            For an unknown reason, sometimes the mesher/solver succesfully
+            finish its task but throws an mpi error at the end. This makes the
+            workflow to fail. This function allows the workflow to continue in
+            this situation. This is a dirty workaround.
+            """
+            mpi_error_message = ("You can avoid this message by specifying "
+                                 "-quiet on the mpirun command line.")
+            with open(stdout, "r") as _f:
+                for line _f:
+                    pass
+                last_line = line
+            if last_line == mpi_error_message:
+                finish_workflow = False
+            else:
+                finish_workflow = True
+            return finish_workflow
+
         # Executable may come with additional sub arguments, we only need to
         # check that the actually executable exists
         if not unix.which(executable.split(" ")[0]):
@@ -837,18 +856,24 @@ class Specfem:
                 subprocess.run(executable, shell=True, check=True, stdout=f,
                                stderr=f)
         except (subprocess.CalledProcessError, OSError) as e:
-            logger.critical(
-                msg.cli("The external numerical solver has returned a "
-                        "nonzero exit code (failure). Consider stopping any "
-                        "currently running jobs to avoid wasted "
-                        "computational resources. Check 'scratch/solver/"
-                        f"mainsolver/{stdout}' for the solvers stdout log "
-                        "message. The failing command and error message are:",
-                        items=[f"exc: {executable}", f"err: {e}"],
-                        header="external solver error",
-                        border="=")
-            )
-            sys.exit(-1)
+            finish_workflow = check_mpi_exit_error()
+            if finish_workflow:
+                logger.critical(
+                    msg.cli("The external numerical solver has returned a "
+                            "nonzero exit code (failure). Consider stopping any "
+                            "currently running jobs to avoid wasted "
+                            "computational resources. Check 'scratch/solver/"
+                            f"mainsolver/{stdout}' for the solvers stdout log "
+                            "message. The failing command and error message are:",
+                            items=[f"exc: {executable}", f"err: {e}"],
+                            header="external solver error",
+                            border="=")
+                )
+                sys.exit(-1)
+            else:
+                logger.critical("The external numerical solver finished but "
+                                "returned an exit error. Continuing with the "
+                                f"workflow. Check {stdout}.")
 
     @staticmethod
     def _exc2log(exc):
