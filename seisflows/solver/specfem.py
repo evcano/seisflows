@@ -829,7 +829,7 @@ class Specfem:
             mpi_error_message = ("You can avoid this message by specifying "
                                  "-quiet on the mpirun command line.")
             with open(stdout, "r") as _f:
-                for line _f:
+                for line in _f:
                     pass
                 last_line = line
             if last_line == mpi_error_message:
