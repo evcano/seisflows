@@ -828,14 +828,10 @@ class Specfem:
             """
             mpi_error_message = ("You can avoid this message by specifying "
                                  "-quiet on the mpirun command line.")
-            with open(stdout, "r") as _f:
-                for line in _f:
-                    pass
-                last_line = line
-            if last_line == mpi_error_message:
+            if mpi_error_message in open(stdout).read():
                 finish_workflow = False
             else:
-                finish_workflow = True
+                finish_workflow =  True
             return finish_workflow
 
         # Executable may come with additional sub arguments, we only need to
