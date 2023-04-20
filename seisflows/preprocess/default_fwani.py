@@ -30,6 +30,8 @@ class DefaultFwani(Default):
     :type window_delay_thr: float
     :param window_delay_thr: maximum traveltime delay between observations and
         synthetics to accept a window
+    :type window_snr_thr: float
+    :param window_snr_thr: minimum SNR in dB to accept a window
 
     Paths
     -----
@@ -40,7 +42,7 @@ class DefaultFwani(Default):
     __doc__ = Default.__doc__ + __doc__
 
     def __init__(self, apply_window=False, window_len=None, window_cc_thr=None,
-                 window_delay_thr=None, **kwargs):
+                 window_delay_thr=None, window_snr_thr=None, **kwargs):
         """
         Noise Preprocessing module parameters
 
@@ -54,6 +56,7 @@ class DefaultFwani(Default):
         self.window_len = window_len
         self.window_cc_thr = window_cc_thr
         self.window_delay_thr = window_delay_thr
+        self.window_snr_thr = window_snr_thr
 
     def quantify_misfit(self, source_name=None, save_residuals=None,
                         export_residuals=None, save_adjsrcs=None, iteration=1,
@@ -182,6 +185,24 @@ class DefaultFwani(Default):
             unix.cp(src=save_residuals, dst=export_residuals)
 
     def max_env_win(self, obs, syn, nt, dt):
+        def _compute_snr(wf, ind_lo, ind_hi):
+            signal = wf[ind_lo:ind_hi+1].copy()
+            nwin_len = 3 * (ind_hi - ind_lo)
+            nind_lo = ind_hi + 1
+            nind_hi = nind_lo + nwin_len
+            if nind_hi > wf.size:
+                nind_hi = ind_lo - 1
+                nind_lo = nind_hi - nwin_len
+                if nind_lo < 0:
+                    snr = -100.0
+                    return snr
+            noise[ind_lo:ind_hi+1] *= 0.0
+            snr = np.max(np.abs(signal)) / np.sqrt(np.mean(np.square(noise)))
+            if snr < 0:
+                snr = -10.0 * np.log10(-snr)
+            elif snr > 0:
+                snr = 10.0 * np.log10(snr)
+            return snr
 
         def _xcorr(s1, s2, dt):
             corr = correlate(s1, s2, mode='full')
@@ -200,12 +221,16 @@ class DefaultFwani(Default):
             win = np.zeros(nt)
             win[ind_lo:ind_hi+1] += np.hanning(ind_hi + 1 - ind_lo)
 
+            snr = _compute_snr(obs, ind_lo, ind_hi)
+
             obs *= win
             syn *= win
 
             cc, max_lag = _xcorr(obs, syn, dt)
 
-            if cc < self.window_cc_thr or np.abs(max_lag) > self.window_delay_thr:
+            if (snr < self.window_snr_thr or
+                cc < self.window_cc_thr or
+                np.abs(max_lag) > self.window_delay_thr):
                 skip =  True
             else:
                 skip = False
