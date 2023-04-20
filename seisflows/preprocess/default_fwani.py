@@ -32,6 +32,8 @@ class DefaultFwani(Default):
         synthetics to accept a window
     :type window_snr_thr: float
     :param window_snr_thr: minimum SNR in dB to accept a window
+    :type data_uncertainty: float
+    :param data_uncertainty: observed data uncertainty in seconds
 
     Paths
     -----
@@ -42,7 +44,8 @@ class DefaultFwani(Default):
     __doc__ = Default.__doc__ + __doc__
 
     def __init__(self, apply_window=False, window_len=None, window_cc_thr=None,
-                 window_delay_thr=None, window_snr_thr=None, **kwargs):
+                 window_delay_thr=None, window_snr_thr=None,
+                 data_uncertainty=None, **kwargs):
         """
         Noise Preprocessing module parameters
 
@@ -57,6 +60,7 @@ class DefaultFwani(Default):
         self.window_cc_thr = window_cc_thr
         self.window_delay_thr = window_delay_thr
         self.window_snr_thr = window_snr_thr
+        self.data_uncertainty = data_uncertainty
 
     def quantify_misfit(self, source_name=None, save_residuals=None,
                         export_residuals=None, save_adjsrcs=None, iteration=1,
@@ -158,6 +162,8 @@ class DefaultFwani(Default):
                             obs=tr_obs_branch, syn=tr_syn_branch,
                             nt=tr_syn_branch.size, dt=tr_syn.stats.delta
                         )
+                        if self.data_uncertainty:
+                            residual /= self.data_uncertainty
                         with open(save_residuals, "a") as f:
                             f.write(f"{residual:.2E}\n")
 
@@ -167,6 +173,9 @@ class DefaultFwani(Default):
                             obs=tr_obs_branch, syn=tr_syn_branch,
                             nt=tr_syn_branch.size, dt=tr_syn.stats.delta
                         )
+                        if self.data_uncertainty:
+                            if np.abs(residual) <= self.data_uncertainty:
+                                adjsrc_branch *= 0.0
                         adjsrc.data[idx1:idx2] = adjsrc_branch.copy()
 
                 if save_adjsrcs and self._generate_adjsrc:
