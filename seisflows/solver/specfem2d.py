@@ -47,6 +47,8 @@ class Specfem2D(Specfem):
             self._parameters += ["vp"]
         elif self.materials.upper() == "ELASTIC":
             self._parameters += ["vp", "vs"]
+        elif self.materials.upper() == "SHEAR":
+            self._parameters += ["vs"]
 
     def setup(self):
         """

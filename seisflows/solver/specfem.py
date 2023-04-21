@@ -177,7 +177,7 @@ class Specfem:
         self._available_model_types = ["gll"]
         self._available_materials = [
             "ELASTIC", "ACOUSTIC",  # specfem2d, specfem3d
-            "ISOTROPIC", "ANISOTROPIC"  # specfem3d_globe
+            "ISOTROPIC", "ANISOTROPIC", "SHEAR"  # specfem3d_globe
         ]
         self._available_noise_distribution = ["default", "external", "invert"]
         # SPECFEM2D specific attributes. Should be overwritten by 3D versions
