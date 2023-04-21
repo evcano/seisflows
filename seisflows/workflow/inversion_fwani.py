@@ -92,7 +92,7 @@ class InversionFwani(Inversion, MigrationFwani):
 
             self.system.run(run_list, path_model=self.path.model_init,
                             save_residuals=os.path.join(self.path.eval_grad,
-                                                        "residuals_{src}_{it}.txt")
+                                                        "residuals_{src}_{it}_0.txt")
                             )
             # end: forward/evaluate_initial_misfit
 
@@ -116,7 +116,7 @@ class InversionFwani(Inversion, MigrationFwani):
 
             self.system.run(run_list, path_model=path_model,
                 save_residuals=os.path.join(self.path.eval_grad,
-                                            "residuals_{src}_{it}.txt")
+                                            "residuals_{src}_{it}_0.txt")
             )
 
         # Rename exported synthetic traces so they are not overwritten by
@@ -128,7 +128,7 @@ class InversionFwani(Inversion, MigrationFwani):
 
         # Override function to sum residuals into the optimization library
         residuals_files = glob(os.path.join(self.path.eval_grad,
-                            f"residuals_*_{self.iteration}.txt"))
+                            f"residuals_*_{self.iteration}_0.txt"))
 
         residuals = self.preprocess.read_residuals(residuals_files)
         total_misfit = self.preprocess.sum_residuals(residuals)
