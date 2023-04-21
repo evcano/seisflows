@@ -45,7 +45,7 @@ class DefaultFwani(Default):
 
     def __init__(self, apply_window=False, window_len=None, window_cc_thr=None,
                  window_delay_thr=None, window_snr_thr=None,
-                 data_uncertainty=None, **kwargs):
+                 data_uncertainty=None, ntask=1, **kwargs):
         """
         Noise Preprocessing module parameters
 
@@ -61,6 +61,7 @@ class DefaultFwani(Default):
         self.window_delay_thr = window_delay_thr
         self.window_snr_thr = window_snr_thr
         self.data_uncertainty = data_uncertainty
+        self._ntask = ntask
 
     def quantify_misfit(self, source_name=None, save_residuals=None,
                         export_residuals=None, save_adjsrcs=None, iteration=1,
@@ -101,6 +102,8 @@ class DefaultFwani(Default):
         # from previous simulations
         if os.path.exists(save_residuals):
             unix.rm(save_residuals)
+
+        residuals = []
 
         for obs_fid, syn_fid in zip(observed, synthetic):
             obs = self.read(fid=obs_fid, data_format=self.obs_data_format)
@@ -164,8 +167,7 @@ class DefaultFwani(Default):
                         )
                         if self.data_uncertainty:
                             residual *= (1.0 / self.data_uncertainty)
-                        with open(save_residuals, "a") as f:
-                            f.write(f"{residual:.2E}\n")
+                        residuals.append(residual)
 
                     # Generate an adjoint source trace, write to file
                     if save_adjsrcs and self._generate_adjsrc:
@@ -187,14 +189,28 @@ class DefaultFwani(Default):
                     fid = self._rename_as_adjoint_source(fid)
                     self.write(st=adjsrc, fid=os.path.join(save_adjsrcs, fid))
 
-        if save_adjsrcs and self._generate_adjsrc:
-            self._check_adjoint_traces(source_name, save_adjsrcs, synthetic)
+        if save_residuals and self._calculate_misfit:
+            nwindows = len(residuals)
+            with open(save_residuals, "a") as f:
+                if nwindows == 0:
+                        f.write("0.0\n")
+                else:
+                    for residual in residuals:
+                        # From Tape et al. (2010)
+                        residual = 0.5 * (1.0 / nwindows) * (residual ** 2.0)
+                        f.write(f"{residual:.2E}\n")
 
         # Exporting residuals to disk (output/) for more permanent storage
         if export_residuals:
             if not os.path.exists(export_residuals):
                 unix.mkdir(export_residuals)
             unix.cp(src=save_residuals, dst=export_residuals)
+
+        if save_adjsrcs and self._generate_adjsrc:
+            self._check_adjoint_traces(source_name, save_adjsrcs, synthetic)
+
+    def sum_residuals(self, residuals):
+        return np.sum(residuals) / self._ntask
 
     def max_env_win(self, obs, syn, nt, dt):
         def _compute_snr(wf, ind_lo, ind_hi):
