@@ -163,7 +163,7 @@ class DefaultFwani(Default):
                             nt=tr_syn_branch.size, dt=tr_syn.stats.delta
                         )
                         if self.data_uncertainty:
-                            residual /= self.data_uncertainty
+                            residual *= (1.0 / self.data_uncertainty)
                         with open(save_residuals, "a") as f:
                             f.write(f"{residual:.2E}\n")
 
@@ -174,6 +174,9 @@ class DefaultFwani(Default):
                             nt=tr_syn_branch.size, dt=tr_syn.stats.delta
                         )
                         if self.data_uncertainty:
+                            # the adjoint source was multiplied by the misfit
+                            # but not by the data uncertainty
+                            adjsrc_branch *= (1.0 / self.data_uncertainty)
                             if np.abs(residual) <= self.data_uncertainty:
                                 adjsrc_branch *= 0.0
                         adjsrc.data[idx1:idx2] = adjsrc_branch.copy()
