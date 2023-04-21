@@ -197,15 +197,15 @@ class DefaultFwani(Default):
         def _compute_snr(wf, ind_lo, ind_hi):
             signal = wf[ind_lo:ind_hi+1].copy()
             nwin_len = 3 * (ind_hi - ind_lo)
-            nind_lo = ind_hi + 1
+            nind_lo = ind_hi + 10
             nind_hi = nind_lo + nwin_len
             if nind_hi > wf.size:
-                nind_hi = ind_lo - 1
+                nind_hi = ind_lo - 10
                 nind_lo = nind_hi - nwin_len
                 if nind_lo < 0:
                     snr = -100.0
                     return snr
-            noise[ind_lo:ind_hi+1] *= 0.0
+            noise = wf[nind_lo:nind_hi+1].copy()
             snr = np.max(np.abs(signal)) / np.sqrt(np.mean(np.square(noise)))
             if snr < 0:
                 snr = -10.0 * np.log10(-snr)
