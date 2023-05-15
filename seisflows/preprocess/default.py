@@ -10,6 +10,7 @@ import numpy as np
 from glob import glob
 from obspy import read as obspy_read
 from obspy import Stream, Trace, UTCDateTime
+from scipy.signal import tukey
 
 from seisflows import logger
 from seisflows.tools import signal, unix
@@ -17,6 +18,7 @@ from seisflows.tools.config import Dict, get_task_id
 
 from seisflows.plugins.preprocess import misfit as misfit_functions
 from seisflows.plugins.preprocess import adjoint as adjoint_sources
+from seisflows.plugins.preprocess.window import window_waveform
 
 
 class Default:
@@ -93,7 +95,9 @@ class Default:
                  mute=None, early_slope=None, early_const=None, late_slope=None,
                  late_const=None, short_dist=None, long_dist=None,
                  workdir=os.getcwd(), path_preprocess=None, path_solver=None,
-                 **kwargs):
+                 apply_window=False, window_len=None, window_cc_thr=None,
+                 window_delay_thr=None, window_snr_thr=None, ntask=1,
+                 data_uncertainty=None, **kwargs):
         """
         Preprocessing module parameters
 
@@ -158,6 +162,14 @@ class Default:
         self._iteration = None
         self._step_count = None
         self._source_names = None
+
+        self.apply_window = apply_window
+        self.window_len = window_len
+        self.window_cc_thr = window_cc_thr
+        self.window_delay_thr = window_delay_thr
+        self.window_snr_thr = window_snr_thr
+        self.data_uncertainty = data_uncertainty
+        self._ntask = ntask
 
     def check(self):
         """ 
@@ -509,9 +521,22 @@ class Default:
         """
         observed, synthetic = self._setup_quantify_misfit(source_name)
 
+        # The names of the source and the reference station are the same
+        sta1 = source_name
+
+        if os.path.exists(save_residuals):
+            unix.rm(save_residuals)
+
         for obs_fid, syn_fid in zip(observed, synthetic):
             obs = self.read(fid=obs_fid, data_format=self.obs_data_format)
             syn = self.read(fid=syn_fid, data_format=self.syn_data_format)
+
+            sta2 = os.path.basename(syn_fid).split(".")[0:2]
+            sta2 = f"{sta2[0]}.{sta2[1]}"
+
+            # Skip autocorrelations
+            if sta1 == sta2:
+                continue
 
             # Process observations and synthetics identically
             if self.filter:
@@ -528,29 +553,60 @@ class Default:
             for tr_obs, tr_syn in zip(obs, syn):
                 # Simple check to make sure zip retains ordering
                 assert(tr_obs.stats.component == tr_syn.stats.component)
+
+                if save_adjsrcs and self._generate_adjsrc:
+                    adjsrc = tr_syn.copy()
+                    adjsrc.data *= 0.0
+
+                if self.apply_window:
+                    win = window_waveform(tr_obs,
+                                          tr_syn,
+                                          self.window_len,
+                                          self.window_snr_thr,
+                                          self.window_cc_thr,
+                                          self.window_delay_thr,
+                                          )
+                else:
+                    win = [0, tr_syn.stats.npts]
+
+                if not win:
+                    continue
+
+                obs_win = tr_obs.data[win[0]:win[1]].copy()
+                syn_win = tr_syn.data[win[0]:win[1]].copy()
+
+                obs_win *= tukey(obs_win.size, 0.2)
+                syn_win *= tukey(syn_win.size, 0.2)
+
                 # Calculate the misfit value and write to file
                 if save_residuals and self._calculate_misfit:
                     residual = self._calculate_misfit(
-                        obs=tr_obs.data, syn=tr_syn.data,
-                        nt=tr_syn.stats.npts, dt=tr_syn.stats.delta
+                        obs=obs_win, syn=syn_win,
+                        nt=syn_win.size, dt=tr_syn.stats.delta
                     )
+                    if self.data_uncertainty:
+                        residual *= (1.0 / self.data_uncertainty)
                     with open(save_residuals, "a") as f:
                         f.write(f"{residual:.2E}\n")
 
                 # Generate an adjoint source trace, write to file
                 if save_adjsrcs and self._generate_adjsrc:
-                    adjsrc = tr_syn.copy()
-                    adjsrc.data = self._generate_adjsrc(
-                        obs=tr_obs.data, syn=tr_syn.data,
-                        nt=tr_syn.stats.npts, dt=tr_syn.stats.delta
+                    adjsrc_win = self._generate_adjsrc(
+                        obs=obs_win, syn=syn_win,
+                        nt=syn_win.size, dt=tr_syn.stats.delta
                     )
+                    if self.data_uncertainty:
+                        adjsrc_win *= (1.0 / self.data_uncertainty)
+                        if np.abs(residual) <= self.data_uncertainty:
+                            adjsrc_win *= 0.0
+                    adjsrc_win *= tukey(adjsrc_win.size, 0.2)
+                    adjsrc.data[win[0]:win[1]] = adjsrc_win.copy()
                     adjsrc = Stream(adjsrc)
+                    if self.filter:
+                        adjsrc = self._apply_filter(adjsrc)
                     fid = os.path.basename(syn_fid)
                     fid = self._rename_as_adjoint_source(fid)
                     self.write(st=adjsrc, fid=os.path.join(save_adjsrcs, fid))
-
-        if save_adjsrcs and self._generate_adjsrc:
-            self._check_adjoint_traces(source_name, save_adjsrcs, synthetic)
 
         # Exporting residuals to disk (output/) for more permanent storage
         if export_residuals:
@@ -558,12 +614,14 @@ class Default:
                 unix.mkdir(export_residuals)
             unix.cp(src=save_residuals, dst=export_residuals)
 
+        if save_adjsrcs and self._generate_adjsrc:
+            self._check_adjoint_traces(source_name, save_adjsrcs, synthetic)
+
     def finalize(self):
         """Teardown procedures for the default preprocessing class"""
         pass
 
-    @staticmethod
-    def sum_residuals(residuals):
+    def sum_residuals(self, residuals):
         """
         Returns the summed square of residuals for each event. Following
         Tape et al. 2007
@@ -573,7 +631,7 @@ class Default:
         :rtype: float
         :return: sum of squares of residuals
         """
-        return np.sum(residuals ** 2.)
+        return np.sum(np.square(residuals)) / residuals.size
 
     def _apply_filter(self, st):
         """
@@ -591,7 +649,7 @@ class Default:
 
         if self.filter.upper() == "BANDPASS":
             st.filter("bandpass", zerophase=True, freqmin=self.min_freq,
-                      freqmax=self.max_freq)
+                      freqmax=self.max_freq, corners=2)
         elif self.filter.upper() == "LOWPASS":
             st.filter("lowpass", zerophase=True, freq=self.max_freq)
         elif self.filter.upper() == "HIGHPASS":
