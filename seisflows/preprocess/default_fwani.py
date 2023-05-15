@@ -6,9 +6,10 @@ import numpy as np
 import os
 from glob import glob
 from obspy import Stream
-from scipy.signal import correlate, correlation_lags
+from scipy.signal import tukey
 from seisflows.tools import unix
 from seisflows.preprocess.default import Default
+from seisflows.plugins.preprocess.window import window_correlation
 
 
 class DefaultFwani(Default):
@@ -103,8 +104,6 @@ class DefaultFwani(Default):
         if os.path.exists(save_residuals):
             unix.rm(save_residuals)
 
-        residuals = []
-
         for obs_fid, syn_fid in zip(observed, synthetic):
             obs = self.read(fid=obs_fid, data_format=self.obs_data_format)
             syn = self.read(fid=syn_fid, data_format=self.syn_data_format)
@@ -136,69 +135,62 @@ class DefaultFwani(Default):
                     adjsrc = tr_syn.copy()
                     adjsrc.data *= 0.0
 
-                # treat correlation branches separately
-                nt = tr_syn.stats.npts
-                zero_samp = int((nt - 1) / 2)
+                if self.apply_window:
+                    win_neg, win_pos = window_correlation(tr_obs,
+                                                          tr_syn,
+                                                          self.window_len,
+                                                          self.window_snr_thr,
+                                                          self.window_cc_thr,
+                                                          self.window_delay_thr
+                                                         )
+                else:
+                    zero_lag = int((tr_syn.stats.npts-1)/2)
+                    win_neg = [0, zero_lag]
+                    win_pos = [zero_lag, tr_syn.stats.npts]
 
-                for i in range(0,2):
-                    if i == 0:
-                        idx1 = 0
-                        idx2 = zero_samp + 1
-                    elif i == 1:
-                        idx1 = zero_samp
-                        idx2 = nt
+                for win in [win_neg, win_pos]:
+                    if not win:
+                        continue
 
-                    tr_obs_branch = tr_obs.data[idx1:idx2].copy()
-                    tr_syn_branch = tr_syn.data[idx1:idx2].copy()
+                    obs_win = tr_obs.data[win[0]:win[1]].copy()
+                    syn_win = tr_syn.data[win[0]:win[1]].copy()
 
-                    if self.apply_window:
-                        tr_obs_branch, tr_syn_branch, skip = self.max_env_win(
-                            tr_obs_branch, tr_syn_branch, tr_syn_branch.size,
-                            tr_syn.stats.delta)
-
-                        if skip:
-                            continue
+                    obs_win *= tukey(obs_win.size, 0.2)
+                    syn_win *= tukey(syn_win.size, 0.2)
 
                     # Calculate the misfit value and write to file
                     if save_residuals and self._calculate_misfit:
                         residual = self._calculate_misfit(
-                            obs=tr_obs_branch, syn=tr_syn_branch,
-                            nt=tr_syn_branch.size, dt=tr_syn.stats.delta
+                            obs=obs_win, syn=syn_win,
+                            nt=syn_win.size, dt=tr_syn.stats.delta
                         )
                         if self.data_uncertainty:
                             residual *= (1.0 / self.data_uncertainty)
-                        residuals.append(residual)
+                        with open(save_residuals, "a") as f:
+                            f.write(f"{residual:.2E}\n")
 
                     # Generate an adjoint source trace, write to file
                     if save_adjsrcs and self._generate_adjsrc:
-                        adjsrc_branch = self._generate_adjsrc(
-                            obs=tr_obs_branch, syn=tr_syn_branch,
-                            nt=tr_syn_branch.size, dt=tr_syn.stats.delta
+                        adjsrc_win = self._generate_adjsrc(
+                            obs=obs_win, syn=syn_win,
+                            nt=syn_win.size, dt=tr_syn.stats.delta
                         )
                         if self.data_uncertainty:
                             # the adjoint source was multiplied by the residual
                             # but not by the data uncertainty
-                            adjsrc_branch *= (1.0 / self.data_uncertainty)
+                            adjsrc_win *= (1.0 / self.data_uncertainty)
                             if np.abs(residual) <= self.data_uncertainty:
-                                adjsrc_branch *= 0.0
-                        adjsrc.data[idx1:idx2] = adjsrc_branch.copy()
+                                adjsrc_win *= 0.0
+                        adjsrc_win *= tukey(adjsrc_win.size, 0.2)
+                        adjsrc.data[win[0]:win[1]] = adjsrc_win.copy()
 
                 if save_adjsrcs and self._generate_adjsrc:
                     adjsrc = Stream(adjsrc)
+                    if self.filter:
+                        adjsrc = self._apply_filter(adjsrc)
                     fid = os.path.basename(syn_fid)
                     fid = self._rename_as_adjoint_source(fid)
                     self.write(st=adjsrc, fid=os.path.join(save_adjsrcs, fid))
-
-        if save_residuals and self._calculate_misfit:
-            nwindows = len(residuals)
-            with open(save_residuals, "a") as f:
-                if nwindows == 0:
-                        f.write("0.0\n")
-                else:
-                    for residual in residuals:
-                        # From Tape et al. (2010)
-                        residual = (1.0 / nwindows) * (residual ** 2.0)
-                        f.write(f"{residual:.2E}\n")
 
         # Exporting residuals to disk (output/) for more permanent storage
         if export_residuals:
@@ -210,59 +202,4 @@ class DefaultFwani(Default):
             self._check_adjoint_traces(source_name, save_adjsrcs, synthetic)
 
     def sum_residuals(self, residuals):
-        return np.sum(residuals) / self._ntask
-
-    def max_env_win(self, obs, syn, nt, dt):
-        def _compute_snr(wf, ind_lo, ind_hi):
-            signal = wf[ind_lo:ind_hi+1].copy()
-            nwin_len = 3 * (ind_hi - ind_lo)
-            nind_lo = ind_hi + 10
-            nind_hi = nind_lo + nwin_len
-            if nind_hi > wf.size:
-                nind_hi = ind_lo - 10
-                nind_lo = nind_hi - nwin_len
-                if nind_lo < 0:
-                    snr = -100.0
-                    return snr
-            noise = wf[nind_lo:nind_hi+1].copy()
-            snr = np.max(np.abs(signal)) / np.sqrt(np.mean(np.square(noise)))
-            if snr < 0:
-                snr = -10.0 * np.log10(-snr)
-            elif snr > 0:
-                snr = 10.0 * np.log10(snr)
-            return snr
-
-        def _xcorr(s1, s2, dt):
-            corr = correlate(s1, s2, mode='full')
-            corr /= np.linalg.norm(s1) * np.linalg.norm(s2)
-            cc = np.max(corr)
-            lags = correlation_lags(s1.size, s2.size, mode='full')
-            max_lag = lags[np.argmax(corr)] * dt
-            return cc, max_lag
-
-        max_samp = np.argmax(obs ** 2.0)
-        win_ext = int((self.window_len / 2.0) / dt)
-        ind_lo = int(max_samp - win_ext)
-        ind_hi = int(max_samp + win_ext)
-
-        if ind_lo > 0 and ind_hi < nt:
-            win = np.zeros(nt)
-            win[ind_lo:ind_hi+1] += np.hanning(ind_hi + 1 - ind_lo)
-
-            snr = _compute_snr(obs, ind_lo, ind_hi)
-
-            obs *= win
-            syn *= win
-
-            cc, max_lag = _xcorr(obs, syn, dt)
-
-            if (snr < self.window_snr_thr or
-                cc < self.window_cc_thr or
-                np.abs(max_lag) > self.window_delay_thr):
-                skip =  True
-            else:
-                skip = False
-        else:
-            skip = True
-
-        return obs, syn, skip
+        return np.sum(np.square(residuals)) / residuals.size
