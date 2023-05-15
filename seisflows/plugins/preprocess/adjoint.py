@@ -228,6 +228,15 @@ def instantaneous_phase2(syn, obs, nt, dt, eps=0., *args, **kwargs):
     return wadj
 
 
+def cross_correlation_coefficient(syn, obs, nt, dt, *args, **kwargs):
+    cc = np.sum(obs*syn)*dt
+    oo = np.sum(obs*obs)*dt
+    ss = np.sum(syn*syn)*dt
+    w2 = np.sqrt(oo*ss)
+    A = cc / ss
+    wadj = (A*syn-obs) / w2
+    return wadj
+
 def displacement(syn, obs, nt, dt, *args, **kwargs):
     """
     Displacement waveform for migration

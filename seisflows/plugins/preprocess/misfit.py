@@ -97,7 +97,7 @@ def traveltime(syn, obs, nt, dt, *args, **kwargs):
     :type dt: float
     :param dt: time step in sec
     """
-    cc = abs(np.convolve(obs, np.flipud(syn)))
+    cc = np.convolve(obs, np.flipud(syn))
 
     return (np.argmax(cc) - nt + 1) * dt
 
@@ -204,6 +204,14 @@ def instantaneous_phase2(syn, obs, nt, dt, eps=0., *args, **kwargs):
     diff = (syn / env_syn1) - (obs / env_obs1)
 
     return np.sqrt(np.sum(diff * diff * dt))
+
+
+def cross_correlation_coefficient(syn, obs, nt, dt, *args, **kwargs):
+    cc = np.sum(obs*syn)*dt
+    oo = np.sum(obs*obs)*dt
+    ss = np.sum(syn*syn)*dt
+    w2 = np.sqrt(oo*ss)
+    return 1 - cc / w2
 
 
 def displacement(*args, **kwargs):
