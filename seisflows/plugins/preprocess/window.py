@@ -35,10 +35,10 @@ def window_correlation(tr_obs, tr_syn, wdur, snr_thr, cc_thr, tshift_thr):
     wnoiseoffset = int((wdur/4.0)/dt)
 
     # negative branch
-    obs_neg = tr_obs.data.copy()
-    obs_neg[zero_lag:] *= 0.0
+    syn_neg = tr_syn.data.copy()
+    syn_neg[zero_lag:] *= 0.0
 
-    wcen = np.argmax(np.square(obs_neg))
+    wcen = np.argmax(np.square(syn_neg))
     wsig_neg = [int(wcen-whlen), int(wcen+whlen)]
 
     wsig_neg = check_window_limits(wsig_neg, 0, zero_lag, whlen)
@@ -63,10 +63,10 @@ def window_correlation(tr_obs, tr_syn, wdur, snr_thr, cc_thr, tshift_thr):
         wsig_neg = None
 
     # positive branch
-    obs_pos = tr_obs.data.copy()
-    obs_pos[0:zero_lag] *= 0.0
+    syn_pos = tr_syn.data.copy()
+    syn_pos[0:zero_lag] *= 0.0
 
-    wcen = np.argmax(np.square(obs_pos))
+    wcen = np.argmax(np.square(syn_pos))
     wsig_pos = [int(wcen-whlen), int(wcen+whlen)]
 
     wsig_pos = check_window_limits(wsig_pos, zero_lag, nt, whlen)
@@ -98,7 +98,7 @@ def window_waveform(tr_obs, tr_syn, wdur, snr_thr, cc_thr, tshift_thr):
 
     whlen = int((wdur/2.0)/dt)
     wnoiseoffset = int((wdur/4.0)/dt)
-    wcen = np.argmax(np.square(tr_obs.data))
+    wcen = np.argmax(np.square(tr_syn.data))
     wsig = [int(wcen-whlen), int(wcen+whlen)]
 
     wsig = check_window_limits(wsig, 0, nt, whlen)
