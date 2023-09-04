@@ -208,45 +208,45 @@ class Default:
                 assert(self.long_dist is not None)
                 assert (self.long_dist > 0)
 
-        # Data filtering options that will be passed to ObsPy filters
-        if self.filter:
-            acceptable_filters = ["BANDPASS", "LOWPASS", "HIGHPASS"]
-            assert self.filter.upper() in acceptable_filters, \
-                f"self.filter must be in {acceptable_filters}"
-
-            # Set the min/max frequencies and periods, frequency takes priority
-            if self.min_freq is not None:
-                self.max_period = 1 / self.min_freq
-            elif self.max_period is not None:
-                self.min_freq = 1 / self.max_period
-
-            if self.max_freq is not None:
-                self.min_period = 1 / self.max_freq
-            elif self.min_period is not None:
-                self.max_freq =  1 / self.min_period
-
-            # Check that the correct filter bounds have been set
-            if self.filter.upper() == "BANDPASS":
-                assert(self.min_freq is not None and
-                       self.max_freq is not None), \
-                    ("BANDPASS filter PAR.MIN_PERIOD and PAR.MAX_PERIOD or " 
-                     "PAR.MIN_FREQ and PAR.MAX_FREQ")
-            elif self.filter.upper() == "LOWPASS":
-                assert(self.max_freq is not None or
-                       self.min_period is not None),\
-                    "LOWPASS requires PAR.MAX_FREQ or PAR.MIN_PERIOD"
-            elif self.filter.upper() == "HIGHPASS":
-                assert(self.min_freq is not None or
-                       self.max_period is not None),\
-                    "HIGHPASS requires PAR.MIN_FREQ or PAR.MAX_PERIOD"
-
-            # Check that filter bounds make sense, by this point, MIN and MAX
-            # FREQ and PERIOD should be set, so we just check the FREQ
-            assert(0 < self.min_freq < np.inf), "0 < PAR.MIN_FREQ < inf"
-            assert(0 < self.max_freq < np.inf), "0 < PAR.MAX_FREQ < inf"
-            assert(self.min_freq < self.max_freq), (
-                "PAR.MIN_FREQ < PAR.MAX_FREQ"
-            )
+#        # Data filtering options that will be passed to ObsPy filters
+#        if self.filter:
+#            acceptable_filters = ["BANDPASS", "LOWPASS", "HIGHPASS"]
+#            assert self.filter.upper() in acceptable_filters, \
+#                f"self.filter must be in {acceptable_filters}"
+#
+#            # Set the min/max frequencies and periods, frequency takes priority
+#            if self.min_freq is not None:
+#                self.max_period = 1 / self.min_freq
+#            elif self.max_period is not None:
+#                self.min_freq = 1 / self.max_period
+#
+#            if self.max_freq is not None:
+#                self.min_period = 1 / self.max_freq
+#            elif self.min_period is not None:
+#                self.max_freq =  1 / self.min_period
+#
+#            # Check that the correct filter bounds have been set
+#            if self.filter.upper() == "BANDPASS":
+#                assert(self.min_freq is not None and
+#                       self.max_freq is not None), \
+#                    ("BANDPASS filter PAR.MIN_PERIOD and PAR.MAX_PERIOD or " 
+#                     "PAR.MIN_FREQ and PAR.MAX_FREQ")
+#            elif self.filter.upper() == "LOWPASS":
+#                assert(self.max_freq is not None or
+#                       self.min_period is not None),\
+#                    "LOWPASS requires PAR.MAX_FREQ or PAR.MIN_PERIOD"
+#            elif self.filter.upper() == "HIGHPASS":
+#                assert(self.min_freq is not None or
+#                       self.max_period is not None),\
+#                    "HIGHPASS requires PAR.MIN_FREQ or PAR.MAX_PERIOD"
+#
+#            # Check that filter bounds make sense, by this point, MIN and MAX
+#            # FREQ and PERIOD should be set, so we just check the FREQ
+#            assert(0 < self.min_freq < np.inf), "0 < PAR.MIN_FREQ < inf"
+#            assert(0 < self.max_freq < np.inf), "0 < PAR.MAX_FREQ < inf"
+#            assert(self.min_freq < self.max_freq), (
+#                "PAR.MIN_FREQ < PAR.MAX_FREQ"
+#            )
 
         assert(self.syn_data_format.upper() in self._syn_acceptable_data_formats), \
             f"synthetic data format must be in {self._syn_acceptable_data_formats}"
@@ -539,9 +539,6 @@ class Default:
                 continue
 
             # Process observations and synthetics identically
-            if self.filter:
-                obs = self._apply_filter(obs)
-                syn = self._apply_filter(syn)
             if self.mute:
                 obs = self._apply_mute(obs)
                 syn = self._apply_mute(syn)
@@ -558,54 +555,70 @@ class Default:
                     adjsrc = tr_syn.copy()
                     adjsrc.data *= 0.0
 
-                if self.apply_window:
-                    win = window_waveform(tr_obs,
-                                          tr_syn,
-                                          self.window_len,
-                                          self.window_snr_thr,
-                                          self.window_cc_thr,
-                                          self.window_delay_thr,
-                                          )
-                else:
-                    win = [0, tr_syn.stats.npts]
+                for k in range(0, len(self.window_len)):
+                    if save_adjsrcs and self._generate_adjsrc:
+                        band_adjsrc = tr_syn.copy()
+                        band_adjsrc.data *= 0.0
 
-                if not win:
-                    continue
+                    st_obs_band = Stream(tr_obs.copy())
+                    st_obs_band = self._apply_filter(st_obs_band, k)
+                    tr_obs_band = st_obs_band[0]
 
-                obs_win = tr_obs.data[win[0]:win[1]].copy()
-                syn_win = tr_syn.data[win[0]:win[1]].copy()
+                    st_syn_band = Stream(tr_syn.copy())
+                    st_syn_band = self._apply_filter(st_syn_band, k)
+                    tr_syn_band = st_syn_band[0]
 
-                obs_win *= tukey(obs_win.size, 0.2)
-                syn_win *= tukey(syn_win.size, 0.2)
+                    if self.apply_window:
+                        win = window_waveform(tr_obs_band,
+                                              tr_syn_band,
+                                              self.window_len[k],
+                                              self.window_snr_thr[k],
+                                              self.window_cc_thr[k],
+                                              self.window_delay_thr[k],
+                                              )
+                    else:
+                        win = [0, tr_syn_band.stats.npts]
 
-                # Calculate the misfit value and write to file
-                if save_residuals and self._calculate_misfit:
-                    residual = self._calculate_misfit(
-                        obs=obs_win, syn=syn_win,
-                        nt=syn_win.size, dt=tr_syn.stats.delta
-                    )
-                    if self.data_uncertainty:
-                        residual *= (1.0 / self.data_uncertainty)
-                    with open(save_residuals, "a") as f:
-                        f.write(f"{residual:.2E}\n")
+                    if not win:
+                        continue
 
-                # Generate an adjoint source trace, write to file
+                    obs_win = tr_obs_band.data[win[0]:win[1]].copy()
+                    syn_win = tr_syn_band.data[win[0]:win[1]].copy()
+
+                    obs_win *= tukey(obs_win.size, 0.2)
+                    syn_win *= tukey(syn_win.size, 0.2)
+
+                    # Calculate the misfit value and write to file
+                    if save_residuals and self._calculate_misfit:
+                        residual = self._calculate_misfit(
+                            obs=obs_win, syn=syn_win,
+                            nt=syn_win.size, dt=tr_syn.stats.delta
+                        )
+                        if self.data_uncertainty:
+                            residual *= (1.0 / self.data_uncertainty)
+                        with open(save_residuals, "a") as f:
+                            f.write(f"{residual:.2E}\n")
+                        with open(f"{save_residuals}.names", "a") as f:
+                            f.write(f"{sta1}_{sta2}\n")
+
+                    # Generate an adjoint source trace
+                    if save_adjsrcs and self._generate_adjsrc:
+                        adjsrc_win = self._generate_adjsrc(
+                            obs=obs_win, syn=syn_win,
+                            nt=syn_win.size, dt=tr_syn.stats.delta
+                        )
+                        if self.data_uncertainty:
+                            adjsrc_win *= (1.0 / self.data_uncertainty)
+                        adjsrc_win *= tukey(adjsrc_win.size, 0.2)
+                        band_adjsrc.data[win[0]:win[1]] = adjsrc_win.copy()
+                        band_adjsrc = Stream(band_adjsrc)
+                        band_adjsrc = self._apply_filter(band_adjsrc, k)
+                        adjsrc.data += band_adjsrc[0].data
+
                 if save_adjsrcs and self._generate_adjsrc:
-                    adjsrc_win = self._generate_adjsrc(
-                        obs=obs_win, syn=syn_win,
-                        nt=syn_win.size, dt=tr_syn.stats.delta
-                    )
-                    if self.data_uncertainty:
-                        adjsrc_win *= (1.0 / self.data_uncertainty)
-                        if np.abs(residual) <= self.data_uncertainty:
-                            adjsrc_win *= 0.0
-                    adjsrc_win *= tukey(adjsrc_win.size, 0.2)
-                    adjsrc.data[win[0]:win[1]] = adjsrc_win.copy()
-                    adjsrc = Stream(adjsrc)
-                    if self.filter:
-                        adjsrc = self._apply_filter(adjsrc)
                     fid = os.path.basename(syn_fid)
                     fid = self._rename_as_adjoint_source(fid)
+                    adjsrc = Stream(adjsrc)
                     self.write(st=adjsrc, fid=os.path.join(save_adjsrcs, fid))
 
         # Exporting residuals to disk (output/) for more permanent storage
@@ -633,7 +646,7 @@ class Default:
         """
         return np.sum(np.square(residuals)) / residuals.size
 
-    def _apply_filter(self, st):
+    def _apply_filter(self, st, i):
         """
         Apply a filter to waveform data using ObsPy
 
@@ -648,12 +661,12 @@ class Default:
         st.taper(0.05, type="hann")
 
         if self.filter.upper() == "BANDPASS":
-            st.filter("bandpass", zerophase=True, freqmin=self.min_freq,
-                      freqmax=self.max_freq, corners=2)
+            st.filter("bandpass", zerophase=True, freqmin=self.min_freq[i],
+                      freqmax=self.max_freq[i], corners=2)
         elif self.filter.upper() == "LOWPASS":
-            st.filter("lowpass", zerophase=True, freq=self.max_freq)
+            st.filter("lowpass", zerophase=True, freq=self.max_freq[i])
         elif self.filter.upper() == "HIGHPASS":
-            st.filter("highpass", zerophase=True, freq=self.min_freq)
+            st.filter("highpass", zerophase=True, freq=self.min_freq[i])
 
         return st
 
