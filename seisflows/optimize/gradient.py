@@ -290,6 +290,13 @@ class Gradient:
         """
         if self.preconditioner is not None:
             p = Model(path=self.path.preconditioner)
+
+            # invert hessian
+            p.update(vector=np.abs(p.vector))
+            p.update(vector=p.vector/np.max(p.vector))
+            p.update(vector=p.vector+np.max(p.vector)*0.1)
+            p.update(vector=1.0/p.vector)
+
             if self.preconditioner.upper() == "DIAGONAL":
                 logger.info("applying diagonal preconditioner")
                 return p.vector * q

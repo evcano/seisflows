@@ -678,12 +678,16 @@ class Specfem:
             for par in self._parameters:
                 unix.cp(src=glob(self.model_wildcard(par=par, kernel=True)),
                         dst=export_kernels)
+            unix.cp(src=glob(self.model_wildcard(par="Hessian2", kernel=True)),
+                    dst=export_kernels)
 
         if save_kernels:
             unix.mkdir(save_kernels)
             for par in self._parameters:
                 unix.mv(src=glob(self.model_wildcard(par=par, kernel=True)),
                         dst=save_kernels)
+            unix.mv(src=glob(self.model_wildcard(par="Hessian2", kernel=True)),
+                    dst=save_kernels)
 
     def combine(self, input_path, output_path, parameters=None):
         """
@@ -725,6 +729,11 @@ class Specfem:
         for name in parameters:
             # e.g.: mpiexec bin/xcombine_sem alpha_kernel kernel_paths output/
             exc = f"bin/xcombine_sem {name}_kernel kernel_paths {output_path}"
+            if name == "Hessian2":
+                # the source code of xcombine_sem must be modified to sum the
+                # absolute value of the kernels and compiled as
+                # xcombine_sem_abs
+                exc = f"bin/xcombine_sem_abs {name}_kernel kernel_paths {output_path}"
             # e.g., smooth_vp.log
             stdout = f"{self._exc2log(exc)}_{name}.log"
             self._run_binary(executable=exc, stdout=stdout)

@@ -30,7 +30,8 @@ class Model:
     # Dictate the parameters that Model can handle, which does not cover all
     # files created by SPECFEM, which includes things like 'ibool', 'info' etc.
     acceptable_parameters = ["vp", "vs", "rho",
-                             "vpv", "vph", "vsv", "vsh", "eta"]
+                             "vpv", "vph", "vsv", "vsh", "eta",
+                             "Hessian2_kernel", "gradient_mask"]
     # Add kernel tag to all acceptable parameters for adjoint simulation results
     acceptable_parameters.extend([f"{_}_kernel" for _ in acceptable_parameters])
     # Edit acceptable parameters for 3DGLOBE, which must include region name
