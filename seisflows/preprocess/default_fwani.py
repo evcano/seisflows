@@ -116,9 +116,6 @@ class DefaultFwani(Default):
                 continue
 
             # Process observations and synthetics identically
-            if self.filter:
-                obs = self._apply_filter(obs)
-                syn = self._apply_filter(syn)
             if self.mute:
                 obs = self._apply_mute(obs)
                 syn = self._apply_mute(syn)
@@ -135,61 +132,74 @@ class DefaultFwani(Default):
                     adjsrc = tr_syn.copy()
                     adjsrc.data *= 0.0
 
-                if self.apply_window:
-                    win_neg, win_pos = window_correlation(tr_obs,
-                                                          tr_syn,
-                                                          self.window_len,
-                                                          self.window_snr_thr,
-                                                          self.window_cc_thr,
-                                                          self.window_delay_thr
-                                                         )
-                else:
-                    zero_lag = int((tr_syn.stats.npts-1)/2)
-                    win_neg = [0, zero_lag]
-                    win_pos = [zero_lag, tr_syn.stats.npts]
-
-                for win in [win_neg, win_pos]:
-                    if not win:
-                        continue
-
-                    obs_win = tr_obs.data[win[0]:win[1]].copy()
-                    syn_win = tr_syn.data[win[0]:win[1]].copy()
-
-                    obs_win *= tukey(obs_win.size, 0.2)
-                    syn_win *= tukey(syn_win.size, 0.2)
-
-                    # Calculate the misfit value and write to file
-                    if save_residuals and self._calculate_misfit:
-                        residual = self._calculate_misfit(
-                            obs=obs_win, syn=syn_win,
-                            nt=syn_win.size, dt=tr_syn.stats.delta
-                        )
-                        if self.data_uncertainty:
-                            residual *= (1.0 / self.data_uncertainty)
-                        with open(save_residuals, "a") as f:
-                            f.write(f"{residual:.2E}\n")
-
-                    # Generate an adjoint source trace, write to file
+                for k in range(0, len(self.window_len)):
                     if save_adjsrcs and self._generate_adjsrc:
-                        adjsrc_win = self._generate_adjsrc(
-                            obs=obs_win, syn=syn_win,
-                            nt=syn_win.size, dt=tr_syn.stats.delta
-                        )
-                        if self.data_uncertainty:
-                            # the adjoint source was multiplied by the residual
-                            # but not by the data uncertainty
-                            adjsrc_win *= (1.0 / self.data_uncertainty)
-                            if np.abs(residual) <= self.data_uncertainty:
-                                adjsrc_win *= 0.0
-                        adjsrc_win *= tukey(adjsrc_win.size, 0.2)
-                        adjsrc.data[win[0]:win[1]] = adjsrc_win.copy()
+                        band_adjsrc = Stream(tr_syn.copy())
+                        band_adjsrc[0].data *= 0.0
+
+                    st_obs_band = Stream(tr_obs.copy())
+                    st_obs_band = self._apply_filter(st_obs_band, k)
+                    tr_obs_band = st_obs_band[0]
+
+                    st_syn_band = Stream(tr_syn.copy())
+                    st_syn_band = self._apply_filter(st_syn_band, k)
+                    tr_syn_band = st_syn_band[0]
+
+                    if self.apply_window:
+                        win_neg, win_pos = window_correlation(tr_obs_band,
+                                                              tr_syn_band,
+                                                              self.window_len[k],
+                                                              self.window_snr_thr[k],
+                                                              self.window_cc_thr[k],
+                                                              self.window_delay_thr[k],
+                                                             )
+                    else:
+                        zero_lag = int((tr_syn.stats.npts-1)/2)
+                        win_neg = [0, zero_lag]
+                        win_pos = [zero_lag, tr_syn.stats.npts]
+
+                    for win in [win_neg, win_pos]:
+                        if not win:
+                            continue
+
+                        obs_win = tr_obs_band.data[win[0]:win[1]].copy()
+                        syn_win = tr_syn_band.data[win[0]:win[1]].copy()
+
+                        obs_win *= tukey(obs_win.size, 0.2)
+                        syn_win *= tukey(syn_win.size, 0.2)
+
+                        # Calculate the misfit value and write to file
+                        if save_residuals and self._calculate_misfit:
+                            residual = self._calculate_misfit(
+                                obs=obs_win, syn=syn_win,
+                                nt=syn_win.size, dt=tr_syn.stats.delta
+                            )
+                            if self.data_uncertainty:
+                                residual *= (1.0 / self.data_uncertainty)
+                            with open(save_residuals, "a") as f:
+                                f.write(f"{residual:.2E}\n")
+
+                        # Generate an adjoint source trace, write to file
+                        if save_adjsrcs and self._generate_adjsrc:
+                            adjsrc_win = self._generate_adjsrc(
+                                obs=obs_win, syn=syn_win,
+                                nt=syn_win.size, dt=tr_syn.stats.delta
+                            )
+                            if self.data_uncertainty:
+                                # the adjoint source was multiplied by the residual
+                                # but not by the data uncertainty
+                                adjsrc_win *= (1.0 / self.data_uncertainty)
+                            adjsrc_win *= tukey(adjsrc_win.size, 0.2)
+                            band_adjsrc[0].data[win[0]:win[1]] = adjsrc_win.copy()
+
+                    if save_adjsrcs and self._generate_adjsrc:
+                        band_adjsrc = self._apply_filter(band_adjsrc, k)
+                        adjsrc.data += band_adjsrc[0].data
 
                 if save_adjsrcs and self._generate_adjsrc:
-                    adjsrc = Stream(adjsrc)
-                    if self.filter:
-                        adjsrc = self._apply_filter(adjsrc)
                     fid = os.path.basename(syn_fid)
                     fid = self._rename_as_adjoint_source(fid)
+                    adjsrc = Stream(adjsrc)
                     self.write(st=adjsrc, fid=os.path.join(save_adjsrcs, fid))
 
         # Exporting residuals to disk (output/) for more permanent storage
