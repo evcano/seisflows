@@ -156,12 +156,12 @@ class Migration(Forward):
                 output_path=os.path.join(self.path.eval_grad, "misfit_kernel")
             )
 
-            logger.info("combining preconditioner kernels into single kernel")
-            self.solver.combine(
-                input_path=os.path.join(self.path.eval_grad, "kernels"),
-                output_path=os.path.join(self.path.eval_grad, "misfit_kernel"),
-                parameters=["Hessian2"]
-            )
+#            logger.info("combining preconditioner kernels into single kernel")
+#            self.solver.combine(
+#                input_path=os.path.join(self.path.eval_grad, "kernels"),
+#                output_path=os.path.join(self.path.eval_grad, "misfit_kernel"),
+#                parameters=["Hessian2"]
+#            )
 
         def smooth_misfit_kernel():
             """Smooth the output misfit kernel"""
@@ -181,16 +181,16 @@ class Migration(Forward):
                                              "misfit_kernel")
                 )
 
-                logger.info(
-                    f"smoothing preconditioner kernel: "
-                    f"H={self.solver.smooth_h}; V={self.solver.smooth_v}"
-                )
-                self.solver.smooth(
-                    input_path=os.path.join(self.path.eval_grad, "mk_nosmooth"),
-                    output_path=os.path.join(self.path.eval_grad,
-                                             "specfem_hessian"),
-                    parameters=["Hessian2"]
-                )
+#                logger.info(
+#                    f"smoothing preconditioner kernel: "
+#                    f"H={self.solver.smooth_h}; V={self.solver.smooth_v}"
+#                )
+#                self.solver.smooth(
+#                    input_path=os.path.join(self.path.eval_grad, "mk_nosmooth"),
+#                    output_path=os.path.join(self.path.eval_grad,
+#                                             "specfem_hessian"),
+#                    parameters=["Hessian2"]
+#                )
 
         # Make sure were in a clean scratch eval_grad directory
         tags = ["misfit_kernel", "mk_nosmooth", "specfem_hessian"]

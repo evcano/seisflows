@@ -160,6 +160,7 @@ class Ibex(Cluster):
              f"{self.slurm_args or ''}",
              f"--job-name={self.title}",
              f"--nodes={self.nodes}",
+             f"--constraint=cascadelake",
              f"--ntasks={self.nproc:d}",
              f"--time={self._tasktime}",
              f"--output={os.path.join(self.path.log_files, '%A_%a')}",
@@ -235,6 +236,7 @@ class Ibex(Cluster):
         # Copy-paste this default run_call and adjust accordingly for subclass
         run_call = " ".join([
             f"{self.run_call_header}",
+            f"conda run -n seisflows",
             f"{os.path.join(ROOT_DIR, 'system', 'runscripts', 'run')}",
             f"--funcs {funcs_fid}",
             f"--kwargs {kwargs_fid}",
